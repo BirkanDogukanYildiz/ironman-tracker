@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Brick · {{ APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="split" style="margin-bottom:16px">
+  <div>
+    <h1 style="font-size:19px">🔁 Brick Antrenmanları</h1>
+    <p class="muted small" style="margin:4px 0 0">Bisiklet → koşu kombinasyonları ve bacaklarınızın gerçek durumu</p>
+  </div>
+  <a class="btn btn--primary" href="{{ url_for('workout_new') }}">＋ Brick ekle</a>
+</div>
+
+{% if sessions %}
+<div class="card" style="margin-bottom:16px">
+  <div class="card__head">
+    <h3>Bisiklet sonrası pace kaybı</h3>
+    <span class="hint">normal koşu pace'ine göre saniye/km · son 15 brick</span>
+  </div>
+  <div class="card__pad">
+    {{ chart }}
+    <p class="hint" style="text-align:center">
+      Pozitif = bisiklet sonrası daha yavaş koşuyorsunuz. Bu fark zamanla küçülmeli.
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="tablewrap">
+    <table class="tbl">
+      <thead><tr>
+        <th>Tarih</th>
+        <th class="num">🚴 Mesafe</th><th class="num">🚴 Süre</th><th class="num">🚴 Hız</th>
+        <th class="num">🏃 Mesafe</th><th class="num">🏃 Süre</th>
+        <th class="num">Brick pace</th><th class="num">Normal pace</th><th class="num">Fark</th>
+        <th class="num">Toplam</th><th class="mid">RPE</th><th>Not</th>
+      </tr></thead>
+      <tbody>
+      {% for b in sessions %}
+        <tr>
+          <td class="nowrap"><b>{{ b.day | gun }}</b></td>
+          <td class="num">{{ b.bike_km | tr(1) }} km</td>
+          <td class="num">{{ b.bike_min | tr(0) }} dk</td>
+          <td class="num mono">{{ b.bike_speed | tr(1) if b.bike_speed else '—' }}</td>
+          <td class="num">{{ b.run_km | tr(1) }} km</td>
+          <td class="num">{{ b.run_min | tr(0) }} dk</td>
+          <td class="num mono"><b>{{ b.brick_pace | pace }}</b></td>
+          <td class="num mono muted">{{ b.normal_pace | pace }}</td>
+          <td class="num mono" style="color:{{ 'var(--iron)' if (b.pace_delta_sec or 0) > 0 else 'var(--ok)' }}">
+            {% if b.pace_delta_sec is not none %}
+              {{ '+' if b.pace_delta_sec > 0 else '' }}{{ b.pace_delta_sec | tr(0) }} sn
+            {% else %}—{% endif %}
+          </td>
+          <td class="num">{{ b.total_min | saat }}</td>
+          <td class="mid muted">{{ b.rpe | tr(1) if b.rpe else '—' }}</td>
+          <td class="small muted" style="max-width:240px">{{ (b.notes or '')[:80] }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="callout" style="margin-top:14px">
+  💡 Brick antrenmanı <b>Sprint seviyesinden itibaren haftada 1 kez</b> yapılmalıdır.
+  “Normal pace”, o brick tarihinden geriye 60 gün içindeki brick olmayan koşularınızın ortalamasıdır.
+</div>
+
+{% else %}
+<div class="card">
+  <div class="empty">
+    <div class="empty__icon">🔁</div>
+    <h3>Henüz brick antrenmanı yok</h3>
+    <p class="muted">
+      Brick, bisikletin hemen ardından koşmaktır — triatlonun en kritik antrenmanı.<br>
+      Kaydetmek için bisiklet ve koşuyu <b>iki ayrı kayıt</b> olarak aynı tarihe girin ve
+      ikisinde de “Brick” kutusunu işaretleyin.
+    </p>
+    <div class="actions" style="justify-content:center;margin-top:14px">
+      <a class="btn btn--primary" href="{{ url_for('workout_new') }}">＋ İlk brick'i ekle</a>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

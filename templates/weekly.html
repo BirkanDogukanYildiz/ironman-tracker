@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Haftalık Takip · {{ APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="split" style="margin-bottom:16px">
+  <div>
+    <h1 style="font-size:19px">Haftalık Takip</h1>
+    <p class="muted small" style="margin:4px 0 0">Hafta hafta hacim, süre ve önceki haftaya göre değişim</p>
+  </div>
+  <form method="get" class="actions">
+    <label for="hafta" class="small muted">Gösterilen hafta</label>
+    <select name="hafta" id="hafta" onchange="this.form.submit()">
+      {% for opt in [12, 26, 52, 104, 160] %}
+        <option value="{{ opt }}" {{ 'selected' if n == opt }}>{{ opt }} hafta</option>
+      {% endfor %}
+    </select>
+  </form>
+</div>
+
+<div class="grid grid--2">
+  <div class="card">
+    <div class="card__head"><h3>Haftalık mesafe</h3><span class="hint">branş dağılımı · km</span></div>
+    <div class="card__pad">
+      {{ chart }}
+      <div class="legend">
+        {% for s in SPORT_ORDER %}<span><i style="background:{{ SPORT_META[s].color }}"></i>{{ SPORT_META[s].label }}</span>{% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card__head"><h3>Haftalık süre</h3><span class="hint">saat{% if target %} · hedef {{ target|tr(0) }} saat{% endif %}</span></div>
+    <div class="card__pad">{{ chart_hours }}</div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="tablewrap">
+    <table class="tbl">
+      <thead><tr>
+        <th>Hafta</th><th></th>
+        <th class="num">🏊 km</th><th class="num">🚴 km</th><th class="num">🏃 km</th>
+        <th class="num">Toplam km</th><th class="num">Süre</th><th class="mid">Adet</th>
+        <th class="num">Uzun koşu</th><th class="num">Uzun bisiklet</th><th class="num">En uzun yüzme</th>
+        <th class="mid">🔁</th><th class="num">Süre Δ</th><th class="num">Mesafe Δ</th>
+      </tr></thead>
+      <tbody>
+      {% for w in rows %}
+        <tr class="{{ 'is-future' if w.count == 0 }}">
+          <td class="nowrap"><b>{{ w.start | gun }}</b></td>
+          <td class="muted small nowrap">H{{ w.index }}{% if w.start == this_monday %} · bu hafta{% endif %}</td>
+          <td class="num">{{ w.swim_km | tr(2) if w.swim_km else '—' }}</td>
+          <td class="num">{{ w.bike_km | tr(1) if w.bike_km else '—' }}</td>
+          <td class="num">{{ w.run_km | tr(1) if w.run_km else '—' }}</td>
+          <td class="num"><b>{{ w.total_km | tr(1) if w.total_km else '—' }}</b></td>
+          <td class="num">{{ w.total_min | saat if w.total_min else '—' }}</td>
+          <td class="mid">{{ w.count or '—' }}</td>
+          <td class="num muted">{{ w.long_run | tr(1) if w.long_run else '—' }}</td>
+          <td class="num muted">{{ w.long_bike | tr(1) if w.long_bike else '—' }}</td>
+          <td class="num muted">{{ w.long_swim | tr(2) if w.long_swim else '—' }}</td>
+          <td class="mid">{{ w.bricks or '' }}</td>
+          <td class="num" style="color:{{ 'var(--ok)' if (w.delta_min or 0) > 0 else 'var(--iron)' if w.delta_min else 'inherit' }}">
+            {{ w.delta_min | signed_pct(0) if w.delta_min is not none else '—' }}</td>
+          <td class="num" style="color:{{ 'var(--ok)' if (w.delta_km or 0) > 0 else 'var(--iron)' if w.delta_km else 'inherit' }}">
+            {{ w.delta_km | signed_pct(0) if w.delta_km is not none else '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="callout" style="margin-top:14px">
+  💡 Haftalık hacmi <b>%10'dan fazla artırmayın</b> — sakatlığın 1 numaralı sebebi budur.
+  Her 4 haftanın 1'i toparlanma haftası olsun (hacmi %40 düşürün).
+</div>
+{% endblock %}

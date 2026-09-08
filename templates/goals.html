@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Hedefler · {{ APP_NAME }}{% endblock %}
+
+{% block content %}
+{% set done = statuses | selectattr('is_done') | list | length %}
+<div class="split" style="margin-bottom:16px">
+  <div>
+    <h1 style="font-size:19px">🎯 Hedefler</h1>
+    <p class="muted small" style="margin:4px 0 0">
+      {{ done }} / {{ statuses | length }} tamamlandı · kısa, orta ve uzun vadeli kilometre taşları
+    </p>
+  </div>
+  <div style="min-width:220px">
+    <div class="bar"><span style="width:{{ (done / (statuses|length or 1) * 100)|round(1) }}%;background:var(--ok)"></span></div>
+  </div>
+</div>
+
+<div class="stack">
+{% for gs in statuses %}
+  {% set g = gs.goal %}
+  {% set accent = SPORT_META[g.sport].color if g.sport in SPORT_META else 'var(--iron)' %}
+  <div class="card" style="border-left:4px solid {{ accent }};{{ 'background:var(--ok-soft)' if gs.is_done }}">
+    <div class="card__pad">
+      <div class="split" style="align-items:flex-start">
+        <div style="flex:1;min-width:260px">
+          <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+            <h3 style="font-size:15px">{{ g.name }}</h3>
+            {% if g.sport in SPORT_META %}
+              <span class="badge badge--{{ g.sport }}">{{ SPORT_META[g.sport].icon }} {{ SPORT_META[g.sport].label }}</span>
+            {% else %}
+              <span class="badge badge--iron">🏅 Triatlon</span>
+            {% endif %}
+            <span class="badge {{ 'badge--ok' if gs.state == 'done' else 'badge--ok' if gs.state == 'ready' else 'badge--warn' if gs.state == 'active' else '' }}">
+              {% if gs.state == 'done' %}✅{% elif gs.state == 'ready' %}🟢{% elif gs.state == 'active' %}🔄{% else %}⬜{% endif %}
+              {{ gs.state_label }}
+            </span>
+            {% if gs.overdue %}<span class="badge badge--iron">⏰ tarih geçti</span>{% endif %}
+          </div>
+          <p class="muted small" style="margin:6px 0 0">{{ g.note or '' }}</p>
+
+          {% if gs.legs %}
+            <div style="margin-top:10px;display:grid;gap:6px;max-width:520px">
+              {% for leg in gs.legs %}
+                <div class="barline">
+                  <span class="small" style="min-width:118px">
+                    {{ leg.icon }} {{ leg.label }}
+                    <span class="muted">{{ leg.target | tr(2 if leg.sport == 'swim' else 1) }} km</span>
+                  </span>
+                  <div class="bar bar--sm" style="margin:0">
+                    <span style="width:{{ (leg.pct*100)|round(1) }}%;background:{{ leg.color }}"></span>
+                  </div>
+                  <span class="barline__val">{{ '✓' if leg.ok else (leg.pct | pct(0)) }}</span>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="barline" style="margin-top:10px;max-width:520px">
+              <div class="bar" style="margin:0">
+                <span style="width:{{ (gs.progress*100)|round(1) }}%;background:{{ accent }}"></span>
+              </div>
+              <span class="barline__val">{{ gs.progress | pct(0) }}</span>
+            </div>
+            <p class="small muted" style="margin:6px 0 0">
+              Mevcut: <b>{{ gs.current | tr(2 if g.sport == 'swim' else 1) }} km</b> ·
+              Hedef: <b>{{ gs.target | tr(2 if g.sport == 'swim' else 1) }} km</b>
+              {% if not gs.is_done %} · kalan {{ (gs.target - gs.current) | tr(2 if g.sport == 'swim' else 1) }} km{% endif %}
+            </p>
+          {% endif %}
+        </div>
+
+        <form method="post" action="{{ url_for('goal_update', gid=g.id) }}"
+              style="display:grid;gap:8px;min-width:210px">
+          <div class="field">
+            <label for="td{{ g.id }}">Hedef tarih</label>
+            <input type="date" id="td{{ g.id }}" name="target_date" value="{{ g.target_date or '' }}">
+          </div>
+          {% if g.goal_type == 'event' %}
+            <div class="field">
+              <label for="cd{{ g.id }}">Yarışı tamamladığım tarih</label>
+              <input type="date" id="cd{{ g.id }}" name="completed_date" value="{{ g.completed_date or '' }}">
+            </div>
+          {% else %}
+            <input type="hidden" name="completed_date" value="{{ g.completed_date or '' }}">
+            {% if gs.completed_on %}
+              <p class="small muted" style="margin:0">Ulaşıldı: <b>{{ gs.completed_on | gun }}</b></p>
+            {% endif %}
+          {% endif %}
+          <div class="actions">
+            <button class="btn btn--sm btn--dark" type="submit">Kaydet</button>
+            <button class="btn btn--sm btn--danger" type="submit" formmethod="post"
+                    formaction="{{ url_for('goal_delete', gid=g.id) }}"
+                    onclick="return confirm('Bu hedef silinsin mi?')">Sil</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endfor %}
+</div>
+
+<details class="adv card card__pad" style="margin-top:18px">
+  <summary>＋ Kendi hedefini ekle</summary>
+  <form method="post" action="{{ url_for('goal_new') }}" class="form" style="margin-top:12px">
+    <div class="form__grid">
+      <div class="field field--wide">
+        <label for="gname">Hedef adı <span class="req">*</span></label>
+        <input type="text" id="gname" name="name" required placeholder="ör. 15 km kesintisiz koşu">
+      </div>
+      <div class="field">
+        <label for="gsport">Branş <span class="req">*</span></label>
+        <select id="gsport" name="sport" required>
+          {% for s in SPORT_ORDER %}<option value="{{ s }}">{{ SPORT_META[s].icon }} {{ SPORT_META[s].label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="gtarget">Hedef mesafe (km) <span class="req">*</span></label>
+        <input type="text" inputmode="decimal" id="gtarget" name="target_value" required placeholder="15">
+      </div>
+      <div class="field">
+        <label for="gdate">Hedef tarih</label>
+        <input type="date" id="gdate" name="target_date">
+      </div>
+      <div class="field">
+        <label for="gnote">Not</label>
+        <input type="text" id="gnote" name="note" placeholder="isteğe bağlı">
+      </div>
+    </div>
+    <div class="actions"><button class="btn btn--primary" type="submit">Hedefi ekle</button></div>
+  </form>
+</details>
+{% endblock %}

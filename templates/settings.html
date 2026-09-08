@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}Ayarlar · {{ APP_NAME }}{% endblock %}
+
+{% block content %}
+<h1 style="font-size:19px;margin-bottom:18px">Ayarlar</h1>
+
+<div class="grid grid--2">
+  <div class="card">
+    <div class="card__head"><h3>Genel</h3></div>
+    <div class="card__pad">
+      <form method="post" action="{{ url_for('settings_save') }}" class="form">
+        <div class="form__grid" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+          <div class="field">
+            <label for="athlete_name">Sporcu adı</label>
+            <input type="text" id="athlete_name" name="athlete_name" value="{{ settings.athlete_name }}">
+          </div>
+          <div class="field">
+            <label for="start_date">Takip başlangıcı</label>
+            <input type="date" id="start_date" name="start_date" value="{{ settings.start_date }}">
+            <span class="hint">Haftalık tablonun ilk haftası</span>
+          </div>
+          <div class="field">
+            <label for="weekly_hour_target">Haftalık süre hedefi (saat)</label>
+            <input type="text" inputmode="decimal" id="weekly_hour_target"
+                   name="weekly_hour_target" value="{{ settings.weekly_hour_target }}">
+            <span class="hint">Grafiklerde hedef çizgisi olarak görünür</span>
+          </div>
+          <div class="field">
+            <label>Yedekleme</label>
+            <label class="check"><input type="checkbox" name="auto_backup" value="1"
+              {{ 'checked' if settings.auto_backup == '1' }}> Açılışta günlük otomatik yedek</label>
+          </div>
+        </div>
+        <div class="actions"><button class="btn btn--primary" type="submit">Kaydet</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card__head"><h3>Veri &amp; Dışa Aktarma</h3></div>
+    <div class="card__pad">
+      <dl class="kv" style="margin-bottom:14px">
+        <dt>Kayıtlı antrenman</dt><dd>{{ info.workouts }}</dd>
+        <dt>İlk / son kayıt</dt><dd>{{ info.first | gun if info.first else '—' }} → {{ info.last | gun if info.last else '—' }}</dd>
+        <dt>Veritabanı boyutu</dt><dd>{{ info.size_kb | tr(1) }} KB</dd>
+      </dl>
+      <div class="actions">
+        <a class="btn" href="{{ url_for('export_excel') }}">📊 Excel (.xlsx)</a>
+        <a class="btn" href="{{ url_for('export_csv') }}">📄 CSV</a>
+        <a class="btn" href="{{ url_for('export_db') }}">💾 Veritabanı (.db)</a>
+      </div>
+      <p class="hint" style="margin-top:10px">
+        Excel dosyası, formülleri canlı 9 sayfalık çalışma kitabıdır — uygulamadan bağımsız çalışır.
+      </p>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card__head">
+    <h3>Seviye Eşikleri</h3>
+    <span class="hint">seviye motorunun kullandığı değerler</span>
+  </div>
+  <div class="card__pad">
+    <div class="callout callout--info" style="margin-bottom:14px">
+      <b>Mesafe (km)</b> = o seviyeye geçmek için gereken <b>tek antrenman</b> mesafesi.
+      <b>30 gün hacim (km)</b> = aynı seviyenin süreklilik koşulu.
+      Değerler soldan sağa <b>azalmamalıdır</b>.
+    </div>
+    <form method="post" action="{{ url_for('thresholds_save') }}">
+      <div class="tablewrap">
+        <table class="tbl">
+          <thead><tr>
+            <th>Branş</th><th></th>
+            {% for lvl in range(7) %}<th class="mid">Sv. {{ lvl }}<br><span style="font-weight:500;text-transform:none">{{ LEVEL_NAMES[lvl] }}</span></th>{% endfor %}
+          </tr></thead>
+          <tbody>
+          {% for s in SPORT_ORDER %}
+            <tr>
+              <td rowspan="2" style="border-left:3px solid {{ SPORT_META[s].color }}">
+                <b>{{ SPORT_META[s].icon }} {{ SPORT_META[s].label }}</b></td>
+              <td class="small muted nowrap">Mesafe (km)</td>
+              {% for lvl in range(7) %}
+                <td><input type="text" inputmode="decimal" name="{{ s }}_d_{{ lvl }}" style="min-width:66px;text-align:center"
+                           value="{{ thresholds[s].distance_km[lvl] | tr(2) }}"></td>
+              {% endfor %}
+            </tr>
+            <tr>
+              <td class="small muted nowrap">30 gün hacim (km)</td>
+              {% for lvl in range(7) %}
+                <td><input type="text" inputmode="decimal" name="{{ s }}_v_{{ lvl }}" style="min-width:66px;text-align:center"
+                           value="{{ thresholds[s].volume_30d_km[lvl] | tr(2) }}"></td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="actions" style="margin-top:14px">
+        <button class="btn btn--primary" type="submit">Eşikleri kaydet</button>
+        <button class="btn" type="submit" formaction="{{ url_for('thresholds_reset') }}"
+                formnovalidate onclick="return confirm('Eşikler varsayılana dönsün mü?')">
+          Varsayılana dön</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card__head">
+    <h3>Yedekler</h3>
+    <form method="post" action="{{ url_for('backup_now') }}">
+      <button class="btn btn--sm btn--dark" type="submit">💾 Şimdi yedek al</button>
+    </form>
+  </div>
+  {% if backups %}
+  <div class="tablewrap">
+    <table class="tbl">
+      <thead><tr><th>Dosya</th><th>Tarih</th><th class="num">Boyut</th><th></th></tr></thead>
+      <tbody>
+      {% for b in backups %}
+        <tr>
+          <td class="mono small">{{ b.name }}</td>
+          <td class="nowrap">{{ b.created.strftime('%d.%m.%Y %H:%M') }}</td>
+          <td class="num">{{ b.size_kb | tr(1) }} KB</td>
+          <td class="num nowrap">
+            <a class="btn btn--sm btn--ghost" href="{{ url_for('backup_download', name=b.name) }}">indir</a>
+            <form method="post" action="{{ url_for('backup_restore', name=b.name) }}" style="display:inline"
+                  data-confirm="Bu yedek geri yüklenecek ve mevcut veriler değişecek. (Önce mevcut halin yedeği alınır.) Devam?">
+              <button class="btn btn--sm btn--danger" type="submit">geri yükle</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card__pad"><p class="hint">En yeni 10 yedek saklanır; eskiler otomatik silinir.</p></div>
+  {% else %}
+  <div class="card__pad"><p class="muted small">Henüz yedek yok.</p></div>
+  {% endif %}
+</div>
+
+<details class="adv card card__pad" style="margin-top:16px;border-color:color-mix(in srgb, var(--iron) 30%, var(--line))">
+  <summary style="color:var(--iron)">⚠️ Tehlikeli bölge</summary>
+  <form method="post" action="{{ url_for('wipe') }}" class="form" style="margin-top:12px">
+    <p class="small muted" style="margin:0">
+      Tüm antrenman kayıtlarını siler. Hedefler, eşikler ve ayarlar korunur.
+      Silmeden önce otomatik yedek alınır.
+    </p>
+    <div class="field" style="max-width:260px">
+      <label for="confirm">Onaylamak için <b>SİL</b> yazın</label>
+      <input type="text" id="confirm" name="confirm" placeholder="SİL">
+    </div>
+    <div class="actions"><button class="btn btn--danger" type="submit">Tüm antrenmanları sil</button></div>
+  </form>
+</details>
+{% endblock %}

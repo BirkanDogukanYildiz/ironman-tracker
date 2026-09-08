@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ APP_NAME }}{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>🏊</text></svg>">
+</head>
+<body>
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem("ironman-theme");
+      if (t) document.documentElement.setAttribute("data-theme", t);
+    } catch (e) {}
+  })();
+</script>
+
+<header class="topbar">
+  <div class="topbar__inner">
+    <a class="brand" href="{{ url_for('dashboard') }}">
+      <span class="brand__mark">🏊 🚴 🏃</span>
+      <span>
+        <span class="brand__name">IRONMAN YOLCULUĞU</span><br>
+        <span class="brand__sub">{{ APP_TAGLINE }}</span>
+      </span>
+    </a>
+    <span class="topbar__spacer"></span>
+    <div class="topbar__actions">
+      <a class="btn btn--sm" href="{{ url_for('workout_new') }}">＋ Antrenman</a>
+      <button class="btn btn--sm" type="button" id="themeToggle" title="Tema değiştir">◐</button>
+    </div>
+  </div>
+</header>
+
+<nav class="nav">
+  <div class="nav__inner">
+    {% set nav = [
+      ('dashboard',      'Dashboard'),
+      ('workouts_list',  'Antrenmanlar'),
+      ('levels_page',    'Seviyeler'),
+      ('progress_page',  'Branş İlerleme'),
+      ('weekly_page',    'Haftalık'),
+      ('brick_page',     'Brick'),
+      ('goals_page',     'Hedefler'),
+      ('import_page',    'İçe Aktar'),
+      ('settings_page',  'Ayarlar'),
+    ] %}
+    {% for endpoint, label in nav %}
+      <a href="{{ url_for(endpoint) }}" {% if request.endpoint == endpoint %}class="active"{% endif %}>{{ label }}</a>
+    {% endfor %}
+  </div>
+</nav>
+
+<main class="wrap">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flashes">
+        {% for category, msg in messages %}
+          <div class="flash flash--{{ 'error' if category == 'error' else 'ok' }}">{{ msg }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="foot">
+  IRONMAN Antrenman &amp; Seviye Takip Sistemi · v{{ VERSION }} ·
+  veriler yerel SQLite dosyanızda saklanır
+</footer>
+
+<script>
+  document.getElementById("themeToggle").addEventListener("click", function () {
+    var root = document.documentElement;
+    var cur = root.getAttribute("data-theme");
+    var next = cur === "dark" ? "light" : (cur === "light" ? "dark" :
+      (window.matchMedia("(prefers-color-scheme: dark)").matches ? "light" : "dark"));
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("ironman-theme", next); } catch (e) {}
+  });
+  document.querySelectorAll("form[data-confirm]").forEach(function (f) {
+    f.addEventListener("submit", function (e) {
+      if (!window.confirm(f.getAttribute("data-confirm"))) e.preventDefault();
+    });
+  });
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

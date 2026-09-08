@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Seviyeler · {{ APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="split" style="margin-bottom:8px">
+  <div>
+    <h1 style="font-size:19px">Seviye Sistemi</h1>
+    <p class="muted small" style="margin:4px 0 0">Seviye 0'dan IRONMAN'e — her branş için 7 basamak</p>
+  </div>
+  <span class="badge badge--iron">Genel seviye: {{ snap.overall.form_level }} · {{ snap.overall.form_name }}</span>
+</div>
+
+<div class="callout callout--info" style="margin:14px 0 20px">
+  <b>İki seviye, tek sonuç.</b> <b>Mesafe seviyesi</b> en uzun tek antrenmanınıza bakar ve asla düşmez.
+  <b>Form seviyesi</b> son 30 gündeki toplam hacminize bakar; ara verirseniz düşer.
+  Gerçek seviyeniz ikisinin küçüğüdür — bir kez uzun mesafe yapmak yetmez, süreklilik de gerekir.
+</div>
+
+{% for s in SPORT_ORDER %}
+  {% set st = snap.sports[s] %}{% set lv = st.level %}
+  <div class="card" style="margin-bottom:18px">
+    <div class="card__head" style="border-left:4px solid {{ st.color }}">
+      <h3>{{ st.icon }} {{ st.label }}</h3>
+      <div class="actions">
+        <span class="badge badge--{{ s }}">Mesafe sv. {{ lv.distance_level }}</span>
+        <span class="badge {{ 'badge--ok' if lv.volume_level >= lv.distance_level else 'badge--warn' }}">
+          Form sv. {{ lv.volume_level }}</span>
+        <span class="badge badge--iron">Mevcut: {{ lv.current_level }}</span>
+      </div>
+    </div>
+    <div class="ladder">
+      {% for r in table[s] %}
+        <div class="rung {{ 'rung--done' if r.done else ('rung--current' if r.level == lv.distance_level + 1 or (lv.distance_level == 0 and not r.done and r.level == 0) else '') }}">
+          <div class="rung__n">{{ r.level }}</div>
+          <div>
+            <div class="rung__name">
+              {{ r.name }}
+              <span class="muted small" style="font-weight:600"> · {{ r.label }}</span>
+              {% if r.target_time and r.target_time != '—' %}
+                <span class="badge badge--ghost">{{ r.target_time }}</span>
+              {% endif %}
+            </div>
+            <div class="rung__meta">{{ r.criterion }}</div>
+            {% if not r.done %}
+              <div class="barline" style="margin-top:6px;max-width:420px">
+                <div class="bar bar--sm" style="margin:0">
+                  <span style="width:{{ (r.progress*100)|round(1) }}%;background:{{ st.color }}"></span>
+                </div>
+                <span class="barline__val">{{ r.progress | pct(0) }}</span>
+              </div>
+            {% endif %}
+          </div>
+          <div class="rung__right">
+            {% if r.done %}
+              <div><span class="badge badge--ok">✓ Tamamlandı</span></div>
+              {% if r.first_date %}<div class="muted small" style="margin-top:4px">{{ r.first_date | gun }}</div>{% endif %}
+            {% else %}
+              <div class="mono"><b>{% if s == 'swim' %}{{ (r.criterion_km*1000)|tr(0) }} m{% else %}{{ r.criterion_km|tr(1) }} km{% endif %}</b></div>
+              <div class="muted small">kalan
+                {% if s == 'swim' %}{{ ((r.criterion_km - r.current)*1000)|tr(0) }} m
+                {% else %}{{ (r.criterion_km - r.current)|tr(1) }} km{% endif %}</div>
+            {% endif %}
+            <div class="muted small" style="margin-top:4px" title="Bu seviyenin süreklilik koşulu">
+              30g hacim: {{ r.volume_km | tr(SPORT_META[s].decimals) }} km
+              {% if r.volume_done %}<span style="color:var(--ok)">✓</span>{% endif %}
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+{% endfor %}
+{% endblock %}

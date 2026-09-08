@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Antrenman Düzenle' if mode == 'edit' else 'Yeni Antrenman' }} · {{ APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="split" style="margin-bottom:16px">
+  <h1 style="font-size:19px">{{ 'Antrenmanı Düzenle' if mode == 'edit' else 'Yeni Antrenman' }}</h1>
+  <a class="btn btn--ghost" href="{{ url_for('workouts_list') }}">← Listeye dön</a>
+</div>
+
+<div class="card card__pad">
+  <form method="post" class="form" autocomplete="off">
+    <div class="form__grid">
+      <div class="field">
+        <label for="date">Tarih <span class="req">*</span></label>
+        <input type="date" id="date" name="date" required
+               value="{{ (w.date or '')|string|truncate(10, true, '') }}">
+      </div>
+      <div class="field">
+        <label for="sport">Branş <span class="req">*</span></label>
+        <select id="sport" name="sport" required>
+          {% for s in SPORT_ORDER %}
+            <option value="{{ s }}" {{ 'selected' if w.sport == s }}>{{ SPORT_META[s].icon }} {{ SPORT_META[s].label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="kind">Antrenman türü</label>
+        <select id="kind" name="kind">
+          <option value="">—</option>
+          {% for k in KINDS %}
+            <option value="{{ k }}" {{ 'selected' if w.kind == k }}>{{ k }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="rpe">RPE · zorluk (1–10)</label>
+        <input type="number" id="rpe" name="rpe" min="1" max="10" step="1" value="{{ w.rpe or '' }}">
+      </div>
+
+      <div class="field">
+        <label for="distance_km">Mesafe (km) <span class="req">*</span></label>
+        <input type="text" inputmode="decimal" id="distance_km" name="distance_km"
+               value="{{ w.distance_km if w.distance_km not in (None, '') else '' }}" placeholder="8,5">
+        <span class="hint" id="distHint">Yüzme için de km: 750 m → 0,75</span>
+      </div>
+      <div class="field">
+        <label for="duration_min">Süre (dakika) <span class="req">*</span></label>
+        <input type="text" inputmode="decimal" id="duration_min" name="duration_min"
+               value="{{ w.duration_min if w.duration_min not in (None, '') else '' }}" placeholder="54">
+        <span class="hint">1 saat 12 dk → 72</span>
+      </div>
+      <div class="field">
+        <label>Hesaplanan</label>
+        <div class="check" style="justify-content:space-between">
+          <span class="mono" id="calcPace">—</span>
+          <span class="mono muted" id="calcSpeed">—</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="avg_hr">Ortalama nabız</label>
+        <input type="number" id="avg_hr" name="avg_hr" min="30" max="240" value="{{ w.avg_hr or '' }}">
+      </div>
+
+      <div class="field">
+        <label for="elevation_m">Yükselti (m)</label>
+        <input type="number" id="elevation_m" name="elevation_m" min="0" value="{{ w.elevation_m or '' }}">
+      </div>
+      <div class="field">
+        <label for="calories">Kalori</label>
+        <input type="number" id="calories" name="calories" min="0" value="{{ w.calories or '' }}">
+      </div>
+      <div class="field">
+        <label>Brick</label>
+        <label class="check"><input type="checkbox" name="is_brick" value="1" {{ 'checked' if w.is_brick }}>
+          Bisiklet → koşu kombinasyonu</label>
+      </div>
+      <div class="field">
+        <label>Açık su</label>
+        <label class="check"><input type="checkbox" name="is_openwater" value="1" {{ 'checked' if w.is_openwater }}>
+          Havuz değil, açık suda</label>
+      </div>
+
+      <div class="field field--wide">
+        <label for="notes">Notlar</label>
+        <textarea id="notes" name="notes" placeholder="Hava, hissiyat, ekipman, beslenme...">{{ w.notes or '' }}</textarea>
+      </div>
+    </div>
+
+    <div class="callout callout--info">
+      🔁 <b>Brick nasıl girilir?</b> Bisiklet ve koşuyu <b>iki ayrı kayıt</b> olarak, aynı tarihe girin ve
+      ikisinde de “Brick” kutusunu işaretleyin. BRICK sayfası bunları otomatik eşleştirir.
+    </div>
+
+    <div class="actions">
+      <button class="btn btn--primary" type="submit">{{ 'Değişiklikleri kaydet' if mode == 'edit' else 'Kaydet' }}</button>
+      {% if mode == 'new' %}
+        <button class="btn" type="submit" name="save_and_new" value="1">Kaydet ve yeni ekle</button>
+      {% endif %}
+      <a class="btn btn--ghost" href="{{ url_for('workouts_list') }}">Vazgeç</a>
+      {% if mode == 'edit' %}
+        <span style="flex:1"></span>
+      {% endif %}
+    </div>
+  </form>
+</div>
+
+{% if mode == 'edit' %}
+<form method="post" action="{{ url_for('workout_delete', wid=w.id) }}" style="margin-top:14px"
+      data-confirm="Bu antrenman kalıcı olarak silinecek. Emin misiniz?">
+  <button class="btn btn--danger" type="submit">🗑 Bu antrenmanı sil</button>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var d = document.getElementById("distance_km"),
+      t = document.getElementById("duration_min"),
+      s = document.getElementById("sport"),
+      pace = document.getElementById("calcPace"),
+      speed = document.getElementById("calcSpeed"),
+      hint = document.getElementById("distHint");
+
+  function num(v) { var n = parseFloat((v || "").replace(",", ".")); return isNaN(n) ? 0 : n; }
+  function mmss(m) {
+    var total = Math.round(m * 60);
+    return Math.floor(total / 60) + ":" + String(total % 60).padStart(2, "0");
+  }
+  function update() {
+    var km = num(d.value), min = num(t.value), sp = s.value;
+    hint.textContent = sp === "swim" ? "Yüzme için de km: 750 m → 0,75"
+                     : sp === "bike" ? "Örn. 45 km → 45" : "Örn. 8,5 km → 8,5";
+    if (!km || !min) { pace.textContent = "—"; speed.textContent = "—"; return; }
+    speed.textContent = (km / (min / 60)).toFixed(1).replace(".", ",") + " km/s";
+    if (sp === "swim")      pace.textContent = mmss(min / (km * 10)) + " /100m";
+    else if (sp === "run")  pace.textContent = mmss(min / km) + " /km";
+    else                    pace.textContent = "—";
+  }
+  [d, t, s].forEach(function (el) {
+    el.addEventListener("input", update); el.addEventListener("change", update);
+  });
+  update();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Branş İlerleme · {{ APP_NAME }}{% endblock %}
+
+{% block content %}
+<h1 style="font-size:19px;margin-bottom:4px">Branş İlerleme</h1>
+<p class="muted small" style="margin:0 0 18px">Her branş için detaylı analiz ve seviye motorunun çıktıları</p>
+
+{% for s in SPORT_ORDER %}
+  {% set st = snap.sports[s] %}{% set lv = st.level %}{% set dec = SPORT_META[s].decimals %}
+  <div class="card" style="margin-bottom:18px">
+    <div class="card__head" style="border-left:4px solid {{ st.color }}">
+      <h3>{{ st.icon }} {{ st.label }}</h3>
+      <span class="hint">{{ st.count }} antrenman · {{ st.total_hours | tr(1) }} saat</span>
+    </div>
+
+    <div class="card__pad">
+      <div class="grid grid--4">
+        <div>
+          <div class="stat__label">Mevcut seviye</div>
+          <div class="stat__value" style="color:{{ st.color }}">{{ lv.current_level }}</div>
+          <div class="stat__sub">{{ lv.current_name }}</div>
+        </div>
+        <div>
+          <div class="stat__label">Maksimum mesafe</div>
+          <div class="stat__value stat__value--sm">{{ st.max_display }}</div>
+          <div class="stat__sub">{{ st.max_date | gun if st.max_date else '—' }}</div>
+        </div>
+        <div>
+          <div class="stat__label">Sonraki hedef</div>
+          <div class="stat__value stat__value--sm">
+            {% if lv.is_max %}🏆 Maks.
+            {% elif s == 'swim' %}{{ (lv.next_target_km*1000)|tr(0) }} m
+            {% else %}{{ lv.next_target_km|tr(1) }} km{% endif %}
+          </div>
+          <div class="stat__sub">
+            {% if not lv.is_max %}kalan
+              {% if s == 'swim' %}{{ (lv.remaining_km*1000)|tr(0) }} m{% else %}{{ lv.remaining_km|tr(1) }} km{% endif %}
+              · Seviye {{ lv.next_level }}
+            {% else %}tüm seviyeler tamam{% endif %}
+          </div>
+        </div>
+        <div>
+          <div class="stat__label">Ironman'e ilerleme</div>
+          <div class="stat__value stat__value--sm">{{ lv.ironman_pct | pct }}</div>
+          <div class="bar bar--sm"><span style="width:{{ (lv.ironman_pct*100)|round(1) }}%;background:{{ st.color }}"></span></div>
+        </div>
+      </div>
+
+      <div class="grid grid--2" style="margin-top:20px">
+        <div>
+          <dl class="kv">
+            <dt>Toplam mesafe</dt><dd>{{ st.total_km | tr(dec) }} km</dd>
+            <dt>Toplam süre</dt><dd>{{ st.total_min | saat }}</dd>
+            <dt>Ortalama / antrenman</dt><dd>{{ st.avg_km | tr(dec) }} km</dd>
+            <dt>Ortalama pace</dt><dd>{{ st.pace_text }}</dd>
+            <dt>Ortalama hız</dt><dd>{{ st.avg_speed | tr(1) }} km/s</dd>
+          </dl>
+        </div>
+        <div>
+          <dl class="kv">
+            <dt>Son 7 gün</dt><dd>{{ st.km_7d | tr(dec) }} km</dd>
+            <dt>Son 30 gün</dt><dd>{{ st.km_30d | tr(dec) }} km · {{ st.count_30d }} antrenman</dd>
+            <dt>Son 90 gün</dt><dd>{{ st.km_90d | tr(dec) }} km</dd>
+            <dt>Ironman mesafesi</dt><dd>{{ st.race_km | tr(dec) }} km</dd>
+            <dt>Ham mesafe oranı</dt><dd>{{ st.race_ratio | pct }}</dd>
+          </dl>
+        </div>
+      </div>
+
+      <div class="grid grid--2" style="margin-top:20px">
+        <div>
+          <div class="stat__label" style="margin-bottom:6px">Haftalık hacim · son 26 hafta</div>
+          {{ spark[s] }}
+        </div>
+        <div>
+          <div class="stat__label" style="margin-bottom:6px">
+            Seviye bileşenleri
+          </div>
+          <div class="barline" style="margin-bottom:8px">
+            <span class="small muted" style="min-width:110px">Mesafe (rozet)</span>
+            <div class="bar bar--sm" style="margin:0"><span style="width:{{ (lv.distance_level/MAX_LEVEL*100)|round(1) }}%;background:{{ st.color }}"></span></div>
+            <span class="barline__val">{{ lv.distance_level }} / 6</span>
+          </div>
+          <div class="barline">
+            <span class="small muted" style="min-width:110px">Form (30 gün)</span>
+            <div class="bar bar--sm" style="margin:0"><span style="width:{{ (lv.volume_level/MAX_LEVEL*100)|round(1) }}%;background:var(--muted)"></span></div>
+            <span class="barline__val">{{ lv.volume_level }} / 6</span>
+          </div>
+          {% if lv.volume_level < lv.distance_level %}
+            <p class="small" style="color:var(--warn);margin-top:10px">
+              ⚠ Form seviyeniz mesafe seviyenizin altında. Son 30 günde
+              <b>{{ thresholds[s].volume_30d_km[lv.distance_level] | tr(dec) }} km</b> hedefleyin
+              (şu an {{ st.km_30d | tr(dec) }} km).
+            </p>
+          {% endif %}
+        </div>
+      </div>
+
+      <details class="adv" style="margin-top:16px">
+        <summary>{{ 'Pace' if SPORT_META[s].pace_unit else 'Hız' }} trendi — son 30 antrenman</summary>
+        <div style="margin-top:10px">{{ trend[s].chart }}</div>
+        <p class="hint">Birim: {{ trend[s].unit }}{% if SPORT_META[s].pace_unit %} · düşen çizgi = hızlanıyorsunuz{% endif %}</p>
+      </details>
+    </div>
+  </div>
+{% endfor %}
+{% endblock %}

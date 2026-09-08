@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · {{ APP_NAME }}{% endblock %}
+
+{% block content %}
+{% set ov = snap.overall %}
+
+{% if snap.total_workouts == 0 %}
+<div class="card">
+  <div class="empty">
+    <div class="empty__icon">🏁</div>
+    <h3>Henüz antrenman kaydı yok</h3>
+    <p class="muted">İlk antrenmanını ekle veya Strava/Garmin CSV dosyanı içe aktar —<br>
+       dashboard, seviyeler ve hedefler anında hesaplanmaya başlar.</p>
+    <div class="actions" style="justify-content:center;margin-top:14px">
+      <a class="btn btn--primary" href="{{ url_for('workout_new') }}">＋ İlk antrenmanı ekle</a>
+      <a class="btn" href="{{ url_for('import_page') }}">CSV içe aktar</a>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="section"><h2>Genel Durum</h2></div>
+<div class="grid grid--3">
+  <div class="card stat stat--iron">
+    <div class="stat__label">Genel Seviye · güncel form</div>
+    <div class="stat__value">SEVİYE {{ ov.form_level }}</div>
+    <div class="stat__sub">{{ ov.form_name }}
+      {%- if ov.weakest %} · en zayıf halka: {{ SPORT_META[ov.weakest].icon }} {{ SPORT_META[ov.weakest].label }}{% endif %}</div>
+  </div>
+  <div class="card stat stat--slate">
+    <div class="stat__label">Rozet Seviyesi · ulaşılan en yüksek</div>
+    <div class="stat__value">SEVİYE {{ ov.badge_level }}</div>
+    <div class="stat__sub">{{ ov.badge_name }} · bu seviye asla düşmez</div>
+  </div>
+  <div class="card stat stat--iron">
+    <div class="stat__label">Ironman'e tahmini ilerleme</div>
+    <div class="stat__value">{{ ov.ironman_pct | pct }}</div>
+    <div class="bar"><span style="width:{{ (ov.ironman_pct*100)|round(1) }}%;background:var(--iron)"></span></div>
+    <div class="stat__sub" style="margin-top:6px">Ham mesafe oranı: {{ snap.race_ratio | pct }}</div>
+  </div>
+</div>
+
+<div class="section"><h2>Branş Seviyeleri</h2></div>
+<div class="grid grid--3">
+  {% for s in SPORT_ORDER %}
+    {% set st = snap.sports[s] %}{% set lv = st.level %}
+    <div class="card sport sport--{{ s }}">
+      <div class="sport__head">
+        <span>{{ st.icon }}&nbsp; {{ st.label | upper }}</span>
+        {% if lv.distance_level > lv.current_level %}
+          <span class="badge badge--warn" title="Rozet seviyeniz {{ lv.distance_level }}, ancak son 30 gün hacmi düşük">
+            rozet {{ lv.distance_level }}
+          </span>
+        {% endif %}
+      </div>
+      <div class="sport__body">
+        <div class="sport__level">SEVİYE {{ lv.current_level }}</div>
+        <div class="sport__name">{{ lv.current_name }}</div>
+        <div class="sport__row">Maksimum: <b>{{ st.max_display }}</b>
+          {%- if st.max_date %} <span class="small">· {{ st.max_date | gun }}</span>{% endif %}</div>
+        <div class="sport__row">
+          {% if lv.is_max %}🏆 Tüm seviyeler tamamlandı
+          {% else %}Sonraki:
+            <b>{% if s == 'swim' %}{{ (lv.next_target_km*1000) | tr(0) }} m{% else %}{{ lv.next_target_km | tr(1) }} km{% endif %}</b>
+            <span class="small">(kalan
+              {%- if s == 'swim' %} {{ (lv.remaining_km*1000) | tr(0) }} m{% else %} {{ lv.remaining_km | tr(1) }} km{% endif %})</span>
+          {% endif %}
+        </div>
+        <div class="barline" style="margin-top:12px">
+          <div class="bar" style="margin:0"><span style="width:{{ (lv.ironman_pct*100)|round(1) }}%;background:{{ st.color }}"></span></div>
+          <span class="barline__val">{{ lv.ironman_pct | pct }}</span>
+        </div>
+        <div class="sport__row small" style="margin-top:6px">
+          Son 30 gün: <b>{{ st.km_30d | tr(SPORT_META[s].decimals) }} km</b> · {{ st.count_30d }} antrenman
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+<div class="section"><h2>Toplam İstatistikler</h2></div>
+<div class="grid grid--4">
+  <div class="card stat stat--slate">
+    <div class="stat__label">Toplam antrenman süresi</div>
+    <div class="stat__value">{{ snap.total_hours | tr(1) }}<span class="small muted"> saat</span></div>
+    <div class="stat__sub">{{ snap.total_workouts }} antrenman · {{ snap.total_km | tr(0) }} km</div>
+  </div>
+  {% for s in SPORT_ORDER %}
+    {% set st = snap.sports[s] %}
+    <div class="card stat stat--{{ s }}">
+      <div class="stat__label">{{ st.icon }} Toplam {{ st.label }}</div>
+      <div class="stat__value">{{ st.total_km | tr(SPORT_META[s].decimals) }}<span class="small muted"> km</span></div>
+      <div class="stat__sub">{{ st.count }} antrenman · maks {{ st.max_display }}</div>
+    </div>
+  {% endfor %}
+</div>
+
+<div class="grid grid--4" style="margin-top:14px">
+  <div class="card stat stat--slate">
+    <div class="stat__label">Bu hafta</div>
+    <div class="stat__value">{{ snap.week_count }}<span class="small muted"> antrenman</span></div>
+    <div class="stat__sub">{{ snap.week_min | saat }} · {{ snap.week_km | tr(1) }} km
+      {%- if settings.weekly_hour_target %} · hedef {{ settings.weekly_hour_target }} saat{% endif %}</div>
+  </div>
+  <div class="card stat stat--slate">
+    <div class="stat__label">Son 30 gün</div>
+    <div class="stat__value">{{ (snap.last30_min/60) | tr(1) }}<span class="small muted"> saat</span></div>
+    <div class="stat__sub">
+      {% for s in SPORT_ORDER %}{{ SPORT_META[s].icon }} {{ snap.sports[s].km_30d | tr(SPORT_META[s].decimals) }}{% if not loop.last %} · {% endif %}{% endfor %} km
+    </div>
+  </div>
+  <div class="card stat {{ 'stat--ok' if (snap.delta30 or 0) >= 0 else 'stat--iron' }}">
+    <div class="stat__label">30 gün değişim</div>
+    <div class="stat__value">{% if snap.delta30 is none %}—{% else %}{{ snap.delta30 | signed_pct }}{% endif %}</div>
+    <div class="stat__sub">
+      {% if snap.delta30 is none %}önceki 30 günde kayıt yok{% else %}önceki 30 güne göre süre{% endif %}
+    </div>
+  </div>
+  <div class="card stat stat--iron">
+    <div class="stat__label">Sonraki hedef</div>
+    {% if next_goal %}
+      <div class="stat__value stat__value--sm">{{ next_goal.goal.name }}</div>
+      <div class="bar bar--sm"><span style="width:{{ (next_goal.progress*100)|round(1) }}%;background:var(--iron)"></span></div>
+      <div class="stat__sub" style="margin-top:6px">
+        {{ next_goal.progress | pct(0) }} · hedef {{ next_goal.goal.target_date | gun }}
+        {%- if next_goal.overdue %} <span class="badge badge--iron">gecikti</span>{% endif %}
+      </div>
+    {% else %}
+      <div class="stat__value stat__value--sm">🏆 Tümü tamam!</div>
+      <div class="stat__sub">{{ done_goals }} hedef tamamlandı</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="section"><h2>Grafikler</h2></div>
+<div class="grid grid--2">
+  <div class="card">
+    <div class="card__head"><h3>Haftalık antrenman süresi</h3><span class="hint">son 12 hafta · saat</span></div>
+    <div class="card__pad">{{ chart_hours }}</div>
+  </div>
+  <div class="card">
+    <div class="card__head"><h3>Haftalık mesafe dağılımı</h3><span class="hint">km</span></div>
+    <div class="card__pad">
+      {{ chart_stack }}
+      <div class="legend">
+        {% for s in SPORT_ORDER %}
+          <span><i style="background:{{ SPORT_META[s].color }}"></i>{{ SPORT_META[s].label }}</span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card__head"><h3>Branş bazlı Ironman ilerlemesi</h3><span class="hint">seviye + seviye içi</span></div>
+    <div class="card__pad">{{ chart_progress }}</div>
+  </div>
+  <div class="card">
+    <div class="card__head"><h3>Süre dağılımı</h3><span class="hint">toplam saat</span></div>
+    <div class="card__pad">
+      {{ chart_split }}
+      <div class="legend">
+        {% for s in SPORT_ORDER %}
+          <span><i style="background:{{ SPORT_META[s].color }}"></i>{{ SPORT_META[s].label }}</span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if recent %}
+<div class="section"><h2>Son Antrenmanlar</h2></div>
+<div class="card">
+  <div class="tablewrap">
+    <table class="tbl">
+      <thead><tr>
+        <th>Tarih</th><th>Branş</th><th>Tür</th>
+        <th class="num">Mesafe</th><th class="num">Süre</th><th class="num">Pace / Hız</th>
+        <th class="mid">RPE</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for w in recent %}
+        {% set m = SPORT_META[w.sport] %}
+        <tr>
+          <td class="nowrap">{{ w.date | gun }}</td>
+          <td><span class="badge badge--{{ w.sport }}">{{ m.icon }} {{ m.label }}</span>
+              {% if w.is_brick %}<span class="badge badge--iron">🔁</span>{% endif %}</td>
+          <td class="muted">{{ w.kind or '—' }}</td>
+          <td class="num">{{ w.distance_km | tr(m.decimals) }} km</td>
+          <td class="num">{{ w.duration_min | saat }}</td>
+          <td class="num mono">
+            {%- if m.pace_unit -%}
+              {{ (w.duration_min / (w.distance_km / m.pace_divisor)) | pace if w.distance_km else '—' }} {{ m.pace_unit }}
+            {%- else -%}
+              {{ (w.distance_km / (w.duration_min/60)) | tr(1) if w.duration_min else '—' }} km/s
+            {%- endif -%}
+          </td>
+          <td class="mid muted">{{ w.rpe or '—' }}</td>
+          <td class="num"><a class="btn btn--sm btn--ghost" href="{{ url_for('workout_edit', wid=w.id) }}">düzenle</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<div class="actions" style="margin-top:12px;justify-content:center">
+  <a class="btn" href="{{ url_for('workouts_list') }}">Tüm antrenmanlar →</a>
+  <a class="btn" href="{{ url_for('export_excel') }}">📊 Excel olarak indir</a>
+</div>
+{% endif %}
+{% endblock %}

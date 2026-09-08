@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Antrenmanlar · {{ APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="split" style="margin-bottom:16px">
+  <div>
+    <h1 style="font-size:19px">Antrenman Kayıtları</h1>
+    <p class="muted small" style="margin:4px 0 0">
+      {{ agg.count }} kayıt · {{ agg.km | tr(1) }} km · {{ agg.min | saat }}
+    </p>
+  </div>
+  <div class="actions">
+    <a class="btn btn--primary" href="{{ url_for('workout_new') }}">＋ Yeni antrenman</a>
+    <a class="btn" href="{{ url_for('export_csv') }}">CSV indir</a>
+    <a class="btn" href="{{ url_for('export_excel') }}">📊 Excel indir</a>
+  </div>
+</div>
+
+<div class="card card__pad" style="margin-bottom:14px">
+  <form class="filters" method="get">
+    <div class="field">
+      <label for="brans">Branş</label>
+      <select name="brans" id="brans">
+        <option value="">Tümü</option>
+        {% for s in SPORT_ORDER %}
+          <option value="{{ s }}" {{ 'selected' if filters.sport == s }}>{{ SPORT_META[s].icon }} {{ SPORT_META[s].label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="baslangic">Başlangıç</label>
+      <input type="date" id="baslangic" name="baslangic" value="{{ filters.date_from or '' }}">
+    </div>
+    <div class="field">
+      <label for="bitis">Bitiş</label>
+      <input type="date" id="bitis" name="bitis" value="{{ filters.date_to or '' }}">
+    </div>
+    <div class="field" style="flex:1;min-width:180px">
+      <label for="q">Ara (tür / not)</label>
+      <input type="search" id="q" name="q" value="{{ filters.search or '' }}" placeholder="ör. interval">
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <label class="check"><input type="checkbox" name="brick" value="1" {{ 'checked' if filters.brick_only }}> Sadece brick</label>
+    </div>
+    <div class="actions">
+      <button class="btn btn--dark" type="submit">Filtrele</button>
+      <a class="btn btn--ghost" href="{{ url_for('workouts_list') }}">Temizle</a>
+    </div>
+  </form>
+</div>
+
+{% if rows %}
+<div class="card">
+  <div class="tablewrap">
+    <table class="tbl">
+      <thead><tr>
+        <th>Tarih</th><th>Branş</th><th>Tür</th>
+        <th class="num">Mesafe</th><th class="num">Süre</th>
+        <th class="num">Pace</th><th class="num">Hız</th>
+        <th class="num">Nabız</th><th class="mid">RPE</th>
+        <th class="num">Yükselti</th><th class="mid">🔁</th>
+        <th>Notlar</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for w in rows %}
+        {% set m = SPORT_META[w.sport] %}
+        <tr>
+          <td class="nowrap">{{ w.date | gun }}</td>
+          <td><span class="badge badge--{{ w.sport }}">{{ m.icon }} {{ m.label }}</span></td>
+          <td class="muted nowrap">{{ w.kind or '—' }}
+            {% if w.is_openwater %}<span class="badge badge--swim" title="Açık su">🌊</span>{% endif %}</td>
+          <td class="num">{{ w.distance_km | tr(m.decimals) }}</td>
+          <td class="num">{{ w.duration_min | tr(0) }} dk</td>
+          <td class="num mono">{% if w._pace %}{{ w._pace | pace }}<span class="small muted">{{ m.pace_unit }}</span>{% else %}—{% endif %}</td>
+          <td class="num mono">{{ w._speed | tr(1) if w._speed else '—' }}</td>
+          <td class="num muted">{{ w.avg_hr or '—' }}</td>
+          <td class="mid muted">{{ w.rpe or '—' }}</td>
+          <td class="num muted">{{ w.elevation_m or '—' }}</td>
+          <td class="mid">{% if w.is_brick %}✅{% endif %}</td>
+          <td class="small muted" style="max-width:260px">{{ (w.notes or '')[:90] }}</td>
+          <td class="num nowrap">
+            <a class="btn btn--sm btn--ghost" href="{{ url_for('workout_edit', wid=w.id) }}">✎</a>
+            <form method="post" action="{{ url_for('workout_delete', wid=w.id) }}" style="display:inline"
+                  data-confirm="Bu antrenman kalıcı olarak silinecek. Emin misiniz?">
+              <input type="hidden" name="next" value="{{ request.full_path }}">
+              <button class="btn btn--sm btn--danger" type="submit">🗑</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if pages > 1 %}
+{% macro page_link(p) -%}
+{{ url_for('workouts_list', sayfa=p,
+           brans=filters.sport or '', baslangic=filters.date_from or '',
+           bitis=filters.date_to or '', q=filters.search or '',
+           brick='1' if filters.brick_only else '') }}
+{%- endmacro %}
+<div class="pager">
+  {% if page > 1 %}<a href="{{ page_link(page - 1) }}">‹ önceki</a>{% endif %}
+  {% for p in range(1, pages + 1) %}
+    {% if p == page %}<span class="on">{{ p }}</span>
+    {% elif p <= 2 or p > pages - 2 or (p >= page - 2 and p <= page + 2) %}
+      <a href="{{ page_link(p) }}">{{ p }}</a>
+    {% elif p == 3 and page > 5 %}<span>…</span>
+    {% endif %}
+  {% endfor %}
+  {% if page < pages %}<a href="{{ page_link(page + 1) }}">sonraki ›</a>{% endif %}
+</div>
+{% endif %}
+
+{% else %}
+<div class="card">
+  <div class="empty">
+    <div class="empty__icon">🔍</div>
+    <h3>Kayıt bulunamadı</h3>
+    <p class="muted">Filtreleri gevşetin veya yeni bir antrenman ekleyin.</p>
+    <div class="actions" style="justify-content:center;margin-top:12px">
+      <a class="btn btn--primary" href="{{ url_for('workout_new') }}">＋ Antrenman ekle</a>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

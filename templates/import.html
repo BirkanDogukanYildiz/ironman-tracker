@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}İçe Aktar · {{ APP_NAME }}{% endblock %}
+
+{% block content %}
+<h1 style="font-size:19px;margin-bottom:4px">CSV İçe Aktarma</h1>
+<p class="muted small" style="margin:0 0 18px">Strava, Garmin Connect veya kendi tablonuzdan toplu yükleme</p>
+
+{% if not preview %}
+<div class="grid grid--2">
+  <div class="card card__pad">
+    <form method="post" enctype="multipart/form-data" class="form">
+      <div class="field">
+        <label for="file">CSV dosyası <span class="req">*</span></label>
+        <input type="file" id="file" name="file" accept=".csv,text/csv" required>
+        <span class="hint">En fazla 20 MB · UTF-8, Windows-1254 ve Latin-1 desteklenir</span>
+      </div>
+      <div class="field">
+        <label for="default_kind">Varsayılan antrenman türü</label>
+        <select id="default_kind" name="default_kind">
+          <option value="">— (boş bırak)</option>
+          {% for k in KINDS %}<option value="{{ k }}">{{ k }}</option>{% endfor %}
+        </select>
+        <span class="hint">CSV'de tür bilgisi yoksa tüm kayıtlara bu tür yazılır</span>
+      </div>
+      <label class="check"><input type="checkbox" name="mark_brick" value="1">
+        Tüm kayıtları brick olarak işaretle</label>
+      <div class="actions">
+        <button class="btn btn--primary" type="submit">Dosyayı oku ve önizle</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card card__pad">
+    <h3 style="font-size:14px;margin-bottom:10px">Nereden CSV alırım?</h3>
+    <dl class="kv" style="grid-template-columns:1fr">
+      <dt>Strava</dt>
+      <dd class="small" style="font-weight:500">
+        Ayarlar → Hesabım → <i>Hesabınızın bir kopyasını indirin</i> → gelen arşivdeki
+        <code>activities.csv</code>
+      </dd>
+      <dt style="margin-top:10px">Garmin Connect</dt>
+      <dd class="small" style="font-weight:500">
+        Aktiviteler → Tüm Aktiviteler → sağ üstteki <i>Dışa Aktar (CSV)</i>
+      </dd>
+      <dt style="margin-top:10px">Kendi tablonuz</dt>
+      <dd class="small" style="font-weight:500">
+        Şu başlıklar tanınır: <code>Tarih</code>, <code>Branş / Aktivite Türü</code>,
+        <code>Mesafe</code>, <code>Süre</code>, <code>Nabız</code>, <code>Yükselti</code>, <code>Kalori</code>
+      </dd>
+    </dl>
+    <div class="callout callout--info" style="margin-top:14px">
+      <b>Akıllı tanıma:</b> Kolon adları, birimler (m / km / mil, saniye / dakika / hh:mm:ss)
+      ve branş isimleri (Run, Koşu, Ride, Bisiklet, Swim, Yüzme…) otomatik algılanır.
+      Aynı aktivite iki kez yüklenirse <b>mükerrer kayıt eklenmez</b>.
+    </div>
+  </div>
+</div>
+
+{% else %}
+
+<div class="split" style="margin-bottom:14px">
+  <div>
+    <h3 style="font-size:15px">{{ filename }}</h3>
+    <p class="muted small" style="margin:4px 0 0">
+      {{ preview.total }} satır okundu ·
+      <b style="color:var(--ok)">{{ preview.valid }} geçerli</b> ·
+      <b style="color:var(--iron)">{{ preview.skipped }} atlanacak</b>
+    </p>
+  </div>
+  <a class="btn btn--ghost" href="{{ url_for('import_page') }}">← Başka dosya seç</a>
+</div>
+
+<div class="card card__pad" style="margin-bottom:14px">
+  <div class="stat__label" style="margin-bottom:8px">Tanınan kolonlar</div>
+  <div class="actions">
+    {% for key, col in preview.mapping.items() %}
+      <span class="badge badge--ghost">{{ key }} → <b>{{ col }}</b></span>
+    {% endfor %}
+    {% if not preview.mapping %}<span class="muted small">Hiçbir kolon tanınamadı.</span>{% endif %}
+  </div>
+</div>
+
+{% if preview.valid %}
+<div class="card">
+  <div class="card__head"><h3>Önizleme</h3><span class="hint">ilk {{ preview.sample | length }} satır</span></div>
+  <div class="tablewrap">
+    <table class="tbl">
+      <thead><tr>
+        <th class="mid">Durum</th><th>Tarih</th><th>Branş</th><th>Tür</th>
+        <th class="num">Mesafe</th><th class="num">Süre</th><th class="num">Nabız</th><th>Not</th>
+      </tr></thead>
+      <tbody>
+      {% for r in preview.sample %}
+        {% if r.ok %}
+          {% set m = SPORT_META[r.data.sport] %}
+          <tr>
+            <td class="mid">✅</td>
+            <td class="nowrap">{{ r.data.date | gun }}</td>
+            <td><span class="badge badge--{{ r.data.sport }}">{{ m.icon }} {{ m.label }}</span></td>
+            <td class="muted">{{ r.data.kind or '—' }}</td>
+            <td class="num">{{ r.data.distance_km | tr(m.decimals) }} km</td>
+            <td class="num">{{ r.data.duration_min | tr(0) }} dk</td>
+            <td class="num muted">{{ r.data.avg_hr or '—' }}</td>
+            <td class="small muted" style="max-width:260px">{{ (r.data.notes or '')[:70] }}</td>
+          </tr>
+        {% else %}
+          <tr class="is-future">
+            <td class="mid">⚠️</td>
+            <td colspan="7" class="small muted">{{ r.reason }}</td>
+          </tr>
+        {% endif %}
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<form method="post" style="margin-top:16px">
+  <input type="hidden" name="token" value="{{ token }}">
+  <input type="hidden" name="default_kind" value="{{ default_kind }}">
+  {% if mark_brick %}<input type="hidden" name="mark_brick" value="1">{% endif %}
+  <div class="actions">
+    <button class="btn btn--primary" type="submit">
+      ✅ {{ preview.valid }} antrenmanı içe aktar
+    </button>
+    <a class="btn btn--ghost" href="{{ url_for('import_page') }}">Vazgeç</a>
+  </div>
+  <p class="hint" style="margin-top:8px">
+    Zaten kayıtlı olan aktiviteler otomatik atlanır — aynı dosyayı iki kez yüklemek güvenlidir.
+  </p>
+</form>
+{% else %}
+<div class="card">
+  <div class="empty">
+    <div class="empty__icon">⚠️</div>
+    <h3>Geçerli satır bulunamadı</h3>
+    <p class="muted">Tarih ve branş kolonları tanınamadı. Dosyanın başlık satırı olduğundan emin olun.</p>
+  </div>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}
