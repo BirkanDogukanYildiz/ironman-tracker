@@ -30,14 +30,23 @@ pip install -r requirements.txt
 python app.py
 ```
 
-### Telefondan erişim
-```bash
-./run.sh --host 0.0.0.0
-```
-Uygulama, aynı Wi-Fi ağındaki telefondan da açılabilir; başlangıçta yazdırılan adresi kullanın.
-Antrenman sonrası kaydı telefondan girmek için pratiktir.
+### Telefondan erişim (iPhone / Android)
+
+Windows'ta **`run-telefon.bat`**, Mac/Linux'ta **`./run-telefon.sh`** ile başlatın.
+
+1. Telefon ve bilgisayar **aynı Wi-Fi ağında** olmalı (telefonda mobil veri değil).
+2. Windows ilk açılışta güvenlik duvarı soracak → **“Özel ağlar”** kutusunu işaretleyip
+   **Erişime izin ver** deyin. Bu adım atlanırsa telefondan bağlanılamaz.
+3. Bilgisayarda **`/telefon`** sayfasını açın (üst çubuktaki 📱 düğmesi) — ekranda bir **QR kod**
+   ve adres çıkar.
+4. iPhone'un **Kamera** uygulamasını QR koda tutun, çıkan bildirime dokunun.
+5. Açılan sayfada **Paylaş → Ana Ekrana Ekle** deyin; uygulama gibi simgesi olur.
+
+Bağlanamıyorsanız `/telefon` sayfasındaki sorun giderme listesine bakın
+(ağ profili “Özel” mi, VPN açık mı, misafir ağında mı, bilgisayar uykuda mı).
 
 > Uygulama internete açık değildir ve kimlik doğrulaması yoktur — sadece kendi ağınızda kullanın.
+> Bilgisayar uykuya geçerse bağlantı kopar.
 
 ---
 
@@ -51,6 +60,7 @@ Antrenman sonrası kaydı telefondan girmek için pratiktir.
 | **Branş İlerleme** | Branş bazlı detaylı analiz, pace/hız trendi, seviye bileşenleri |
 | **Haftalık** | Hafta hafta hacim ve süre, önceki haftaya göre % değişim |
 | **Brick** | Bisiklet→koşu antrenmanları ve bisiklet sonrası pace kaybı |
+| **Ölçümler** | Kilo, bel, boyun, omuz · yağ oranı ve yağsız kitle otomatik |
 | **Hedefler** | 14 kilometre taşı + kendi hedeflerinizi ekleme |
 | **İçe Aktar** | Strava / Garmin / kendi CSV'nizden toplu yükleme |
 | **Ayarlar** | Seviye eşikleri, yedekler, dışa aktarma |
@@ -85,6 +95,32 @@ Eşikler **Ayarlar → Seviye Eşikleri**'nden değiştirilebilir (soldan sağa 
 
 ---
 
+## Vücut ölçümleri
+
+**Ölçümler** sayfasına tarih + kilo + bel + boyun + omuz girersiniz; gerisi hesaplanır:
+
+| Türetilen değer | Nasıl |
+|---|---|
+| Yağ oranı | US Navy formülü — bel, boyun ve boydan |
+| Yağsız kitle | kilo × (1 − yağ oranı) |
+| Yağ kitlesi | kilo × yağ oranı |
+| Omuz / bel oranı | omuz ÷ bel (Excel'deki «VÜCUT KOMP.») |
+| BMI | kilo ÷ boy² |
+
+Boy ve cinsiyet **Ayarlar**'dan gelir (varsayılan 174 cm, erkek). Kadın formülü kalça ölçüsü
+de ister; cinsiyet “Kadın” seçilince o alan forma eklenir.
+
+Elinizde kaliper veya biyoempedans ölçümü varsa **“Yağ oranını elle girmek istiyorum”**
+alanına yazın — formülü ezer.
+
+Aynı tarihe ikinci giriş, o günün kaydını **günceller** (mükerrer satır oluşmaz).
+Tartıdaki dalgalanmayı azaltmak için ölçümleri hep aynı koşulda alın: sabah, aç karnına.
+
+> İlk kurulumda «Antreman Rapor.xlsx» dosyasındaki 5 ölçüm otomatik yüklenir.
+> İstemiyorsanız Ölçümler sayfasından silebilirsiniz.
+
+---
+
 ## Veri girişi
 
 - **Mesafe her branşta kilometre**: yüzme 750 m → `0,75` · 3.800 m → `3,8`
@@ -114,8 +150,9 @@ Aynı dosyayı iki kez yüklemek güvenlidir — mükerrer kayıt eklenmez.
 
 **Ayarlar → Excel (.xlsx)** veya Dashboard'daki düğme, 9 sayfalık ve **formülleri canlı** bir
 çalışma kitabı üretir: DASHBOARD, SEVİYELER, ANTRENMAN KAYIT, HAFTALIK TAKİP, BRANŞ İLERLEME,
-BRICK, HEDEFLER, NASIL KULLANILIR, AYARLAR. Grafikler, koşullu biçimlendirme ve açılır listeler
-dahildir; dosya uygulamadan bağımsız çalışır.
+BRICK, HEDEFLER, **ÖLÇÜMLER**, NASIL KULLANILIR, AYARLAR. Grafikler, koşullu biçimlendirme ve
+açılır listeler dahildir; dosya uygulamadan bağımsız çalışır. ÖLÇÜMLER sayfasındaki yağ oranı da
+canlı formüldür (`LOG10` tabanlı US Navy formülü).
 
 > Excel dosyasında yaptığınız değişiklikler uygulamaya **geri yazılmaz**.
 > Veri kaynağınız uygulama olsun; Excel'i rapor ve yedek olarak kullanın.
@@ -140,16 +177,19 @@ ironman-tracker/
 ├── selftest.py             80+ testlik doğrulama paketi
 ├── requirements.txt
 ├── run.sh / run.bat        kurulum + çalıştırma
+├── run-telefon.sh/.bat     telefondan erişime açık başlatma
 ├── ironman/
 │   ├── config.py           branşlar, seviye eşikleri, varsayılan hedefler
 │   ├── db.py               SQLite şeması ve CRUD
 │   ├── levels.py           seviye motoru
 │   ├── stats.py            toplamalar (branş, haftalık, brick, hedef)
+│   ├── body.py             vücut ölçümleri ve yağ oranı hesabı
+│   ├── network.py          yerel ağ adresi + QR kod
 │   ├── charts.py           bağımlılıksız SVG grafik üreteci
 │   ├── importer.py         Strava/Garmin CSV okuyucu
 │   ├── backup.py           yedekleme
 │   └── excel_export.py     formüllü .xlsx üreteci
-├── templates/              11 Jinja şablonu
+├── templates/              14 Jinja şablonu
 ├── static/style.css        tasarım sistemi (açık + koyu tema)
 └── data/                   ironman.db · backups/ · exports/   (git'e girmez)
 ```
@@ -162,8 +202,9 @@ ironman-tracker/
 python selftest.py
 ```
 
-Seviye motorunun çıktılarını Excel formüllerinin sonuçlarıyla karşılaştırır, tüm rotaları,
-form akışlarını, CSV içe aktarmayı, yedeklemeyi ve Excel çıktısını doğrular.
+Seviye motorunun ve vücut ölçümü hesaplarının çıktılarını Excel formüllerinin sonuçlarıyla
+karşılaştırır; tüm rotaları, form akışlarını, CSV içe aktarmayı, yedeklemeyi ve Excel çıktısını
+doğrular.
 Geçici bir veritabanı kullanır — gerçek verinize dokunmaz.
 
 ---

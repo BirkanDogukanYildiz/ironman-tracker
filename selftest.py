@@ -14,7 +14,7 @@ TMP = Path(tempfile.mkdtemp(prefix="ironman-test-"))
 os.environ["IRONMAN_DATA_DIR"] = str(TMP)
 
 import app as flask_app                                    # noqa: E402
-from ironman import backup, db                             # noqa: E402
+from ironman import backup, body, db                       # noqa: E402
 from ironman.importer import read_csv                      # noqa: E402
 from ironman.stats import (brick_sessions, build_snapshot,  # noqa: E402
                            evaluate_goals, weekly_rows)
@@ -142,6 +142,46 @@ def main():
     nxt = next((s for s in statuses if s.state != "done"), None)
     check("sonraki hedef", nxt.goal["name"], "50 km bisiklet")
 
+    print("\n=== 5b. Vücut ölçümleri (Excel ile karşılaştırma) ===")
+    mrows = db.list_measurements(conn)
+    check("tohumlanan ölçüm", len(mrows), 5)
+    series = body.build_series(mrows, height_cm=174.0, sex="male")
+    # «kg-bel-boyun-yağ%» sayfasındaki beklenen değerler
+    EXPECTED = {
+        "2026-06-12": (33.22, 71.45, 35.55, 1.159),
+        "2026-06-19": (31.00, 72.97, 32.78, 1.193),
+        "2026-06-26": (30.42, 73.65, 32.20, 1.204),
+        "2026-07-03": (29.84, 75.07, 31.93, 1.238),
+        "2026-07-18": (29.26, 76.05, 31.45, 1.255),
+    }
+    for m in series:
+        fat, lean, fatkg, vr = EXPECTED[m.day.isoformat()]
+        d = m.day.strftime("%d.%m")
+        check(f"{d} yağ oranı %", round(m.body_fat * 100, 2), fat, 0.02)
+        check(f"{d} yağsız kitle", round(m.lean_mass_kg, 2), lean, 0.03)
+        check(f"{d} yağ kitlesi", round(m.fat_mass_kg, 2), fatkg, 0.03)
+        check(f"{d} omuz/bel", round(m.v_ratio, 3), vr, 0.002)
+    summary = body.summarize(series, today=dt.date(2026, 7, 20))
+    check("toplam bel değişimi", round(summary.total_waist, 1), -7.0)
+    check("toplam yağsız kitle değişimi", round(summary.total_lean, 2), 4.60, 0.03)
+    check("boy yoksa yağ oranı hesaplanmaz",
+          body.build_series(mrows, height_cm=None)[0].body_fat, None)
+    check("bel<boyun ise hesaplanmaz",
+          body.navy_body_fat(40, 41, 174), None)
+    check("kadın formülü kalçasız çalışmaz",
+          body.navy_body_fat(80, 33, 165, "female"), None)
+    check("kadın formülü kalçayla çalışır",
+          round(body.navy_body_fat(80, 33, 165, "female", 100) * 100, 1), 31.9, 0.2)
+    check("BMI", round(body.bmi(107.5, 174), 2), 35.51, 0.02)
+    # aynı tarihe ikinci giriş üzerine yazar
+    db.add_measurement(conn, {"date": "2026-07-18", "weight_kg": 106.0,
+                              "waist_cm": 105.0, "neck_cm": 41.0, "shoulder_cm": 133.0})
+    check("aynı tarih güncellendi", db.count_measurements(conn), 5)
+    check("değer güncellendi",
+          db.get_measurement_by_date(conn, "2026-07-18")["weight_kg"], 106.0)
+    db.update_measurement(conn, db.get_measurement_by_date(conn, "2026-07-18")["id"],
+                          {"weight_kg": 107.5, "waist_cm": 106.0})
+
     print("\n=== 6. CSV içe aktarma ===")
     strava = (
         "Activity ID,Activity Date,Activity Name,Activity Type,Elapsed Time,Distance,"
@@ -185,14 +225,15 @@ def main():
     out = TMP / "export.xlsx"
     build_workbook(out, workouts=db.list_workouts(conn, order="ASC"),
                    goals=db.list_goals(conn), thresholds=db.get_thresholds(conn),
-                   settings=db.get_settings(conn))
+                   settings=db.get_settings(conn),
+                   measurements=db.list_measurements(conn, order="ASC"))
     check("xlsx oluştu", out.exists(), True)
     check("xlsx boyutu > 40 KB", out.stat().st_size > 40_000, True)
     import zipfile
     with zipfile.ZipFile(out) as z:
         names = z.namelist()
         check("xlsx grafik sayısı", len([n for n in names if "charts/chart" in n]), 4)
-        check("xlsx sayfa sayısı", len([n for n in names if n.startswith("xl/worksheets/sheet")]), 9)
+        check("xlsx sayfa sayısı", len([n for n in names if n.startswith("xl/worksheets/sheet")]), 10)
         check("fullCalcOnLoad", 'fullCalcOnLoad="1"' in z.read("xl/workbook.xml").decode(), True)
     conn.close()
 
@@ -202,7 +243,8 @@ def main():
     routes = ["/", "/antrenmanlar", "/antrenmanlar/yeni", "/seviyeler", "/branslar",
               "/haftalik", "/haftalik?hafta=52", "/brick", "/hedefler", "/ice-aktar",
               "/ayarlar", "/saglik", "/antrenmanlar?brans=run&brick=1",
-              "/disa-aktar/csv", "/disa-aktar/excel"]
+              "/olcumler", "/telefon", "/disa-aktar/csv", "/disa-aktar/excel",
+              "/disa-aktar/olcumler.csv"]
     for r in routes:
         resp = client.get(r)
         check(f"GET {r}", resp.status_code, 200)
@@ -244,10 +286,44 @@ def main():
     check("CSV önizleme", resp.status_code, 200)
     check("önizlemede 3 geçerli", "3 geçerli" in resp.get_data(as_text=True), True)
 
+    resp = client.post("/olcumler/yeni", data={
+        "date": "2026-08-01", "weight_kg": "106,2", "waist_cm": "104",
+        "neck_cm": "41", "shoulder_cm": "134"}, follow_redirects=True)
+    check("POST yeni ölçüm", resp.status_code, 200)
+    conn = db.connect()
+    row = db.get_measurement_by_date(conn, "2026-08-01")
+    check("virgüllü kilo kaydedildi", row["weight_kg"], 106.2)
+    mid = row["id"]
+    conn.close()
+    resp = client.post(f"/olcumler/{mid}/duzenle", data={
+        "date": "2026-08-01", "weight_kg": "105", "waist_cm": "103",
+        "neck_cm": "41", "shoulder_cm": "134"}, follow_redirects=True)
+    check("POST ölçüm düzenle", resp.status_code, 200)
+    conn = db.connect()
+    check("ölçüm güncellendi", db.get_measurement(conn, mid)["weight_kg"], 105.0)
+    conn.close()
+    resp = client.post("/olcumler/yeni", data={
+        "date": "2026-08-05", "waist_cm": "40", "neck_cm": "41"}, follow_redirects=True)
+    check("bel<boyun reddedildi", "boyun çevresinden büyük" in resp.get_data(as_text=True), True)
+    resp = client.post("/olcumler/yeni", data={"date": "2026-08-06"}, follow_redirects=True)
+    check("boş ölçüm reddedildi", "En az bir ölçüm" in resp.get_data(as_text=True), True)
+    resp = client.post("/olcumler/yeni", data={
+        "date": "2026-08-07", "weight_kg": "900"}, follow_redirects=True)
+    check("saçma kilo reddedildi", "mantıklı aralıkta değil" in resp.get_data(as_text=True), True)
+    resp = client.post(f"/olcumler/{mid}/sil", follow_redirects=True)
+    check("POST ölçüm sil", resp.status_code, 200)
+    conn = db.connect()
+    check("ölçüm silindi", db.get_measurement(conn, mid), None)
+    conn.close()
+
     resp = client.post("/ayarlar/kaydet", data={
         "athlete_name": "Birkan", "start_date": "2026-08-24",
-        "weekly_hour_target": "7", "auto_backup": "1"}, follow_redirects=True)
+        "weekly_hour_target": "7", "auto_backup": "1", "height_cm": "174",
+        "sex": "male", "birth_date": ""}, follow_redirects=True)
     check("ayar kaydet", resp.status_code, 200)
+    conn = db.connect()
+    check("boy ayarı kaydedildi", db.get_settings(conn)["height_cm"], "174")
+    conn.close()
 
     bad = {f"{s}_{t}_{i}": v for s in ("swim", "bike", "run")
            for t in ("d", "v") for i, v in enumerate([9, 8, 7, 6, 5, 4, 3])}

@@ -115,24 +115,42 @@ def bar_chart(labels: Sequence[str], values: Sequence[float], color: str,
 
 def line_chart(labels: Sequence[str], values: Sequence[float], color: str,
                *, unit: str = "", decimals: int = 1, height: int = 250,
-               width: int = 700, target: float | None = None) -> Markup:
+               width: int = 700, target: float | None = None,
+               tight: bool = False) -> Markup:
+    """tight=True → eksen sıfırdan başlamaz; küçük dalgalanmalar görünür kalır
+    (kilo, bel çevresi gibi taban çizgisi yüksek serilerde gerekir)."""
     if not labels:
         return empty_state()
-    L, R, T, B = 52, 14, 18, 34
+    L, R, T, B = 56, 14, 20, 34
     x0, x1, y0, y1 = L, width - R, T, height - B
-    vmax = _nice_max(max(list(values) + ([target] if target else []) + [0]))
+    vals = [float(v or 0) for v in values]
+    pool = vals + ([target] if target else [])
+    if tight and len(vals) > 1 and max(pool) > 0:
+        lo_raw, hi_raw = min(pool), max(pool)
+        pad = (hi_raw - lo_raw) * 0.25 or max(abs(hi_raw) * 0.02, 0.5)
+        vmin, vmax = lo_raw - pad, hi_raw + pad
+    else:
+        vmin, vmax = 0.0, _nice_max(max(pool + [0]))
+    span = (vmax - vmin) or 1.0
     n = len(labels)
     step = (x1 - x0) / max(1, n - 1) if n > 1 else 0
-    pts = []
-    for i, val in enumerate(values):
-        val = float(val or 0)
-        x = x0 + step * i if n > 1 else (x0 + x1) / 2
-        y = y1 - (y1 - y0) * (val / vmax if vmax else 0)
-        pts.append((x, y, val))
 
-    body = [_y_axis(x0, y0, y1, x1, vmax, fmt=lambda v: tr_num(v, decimals if vmax < 10 else 0))]
+    def ypx(v: float) -> float:
+        return y1 - (y1 - y0) * ((v - vmin) / span)
+
+    pts = [((x0 + step * i) if n > 1 else (x0 + x1) / 2, ypx(v), v)
+           for i, v in enumerate(vals)]
+
+    body = []
+    ticks = 4
+    for i in range(ticks + 1):
+        value = vmin + span * i / ticks
+        y = ypx(value)
+        body.append(f'<line class="c-grid" x1="{x0}" y1="{y:.1f}" x2="{x1}" y2="{y:.1f}"/>')
+        body.append(f'<text class="c-axis" x="{x0 - 8}" y="{y + 4:.1f}" text-anchor="end">'
+                    f'{escape(tr_num(value, decimals if span < 12 else 0))}</text>')
     if target:
-        ty = y1 - (y1 - y0) * (target / vmax)
+        ty = ypx(target)
         body.append(f'<line class="c-target" x1="{x0}" y1="{ty:.1f}" x2="{x1}" y2="{ty:.1f}"/>')
         body.append(f'<text class="c-axis" x="{x1}" y="{ty - 6:.1f}" text-anchor="end">'
                     f'hedef {tr_num(target, 0)}</text>')

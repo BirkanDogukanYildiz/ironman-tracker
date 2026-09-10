@@ -174,4 +174,24 @@ DEFAULT_SETTINGS = {
     "start_date": "2026-08-24",
     "weekly_hour_target": "6",
     "auto_backup": "1",
+    "height_cm": "174",
+    "sex": "male",
+    "birth_date": "",
 }
+
+# --------------------------------------------------------------------------
+# Vücut ölçümleri
+#   Aşağıdaki satırlar «Antreman Rapor.xlsx» dosyasının
+#   «kg-bel-boyun-yağ%» sayfasından alınmıştır. Yalnızca ölçüm tablosu boşken,
+#   yani uygulamanın ilk kurulumunda bir kez yazılır.
+#   Yağ oranı / yağsız kitle / yağ kitlesi kaydedilmez — bel, boyun ve boydan
+#   her seferinde yeniden hesaplanır (US Navy formülü).
+# --------------------------------------------------------------------------
+INITIAL_MEASUREMENTS = [
+    # (tarih,        kilo,   bel, boyun, omuz,  not)
+    ("2026-06-12", 107.00, 113.0, 41.0, 131.0, "Excel'den aktarıldı"),
+    ("2026-06-19", 105.75, 109.0, 41.0, 130.0, "Excel'den aktarıldı"),
+    ("2026-06-26", 105.85, 108.0, 41.0, 130.0, "Excel'den aktarıldı"),
+    ("2026-07-03", 107.00, 107.0, 41.0, 132.5, "Excel'den aktarıldı"),
+    ("2026-07-18", 107.50, 106.0, 41.0, 133.0, "Excel'den aktarıldı"),
+]

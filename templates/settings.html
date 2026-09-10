@@ -30,6 +30,25 @@
             <label class="check"><input type="checkbox" name="auto_backup" value="1"
               {{ 'checked' if settings.auto_backup == '1' }}> Açılışta günlük otomatik yedek</label>
           </div>
+          <div class="field">
+            <label for="height_cm">Boy (cm)</label>
+            <input type="text" inputmode="decimal" id="height_cm" name="height_cm"
+                   value="{{ settings.height_cm }}">
+            <span class="hint">Yağ oranı ve BMI hesabında kullanılır</span>
+          </div>
+          <div class="field">
+            <label for="sex">Cinsiyet</label>
+            <select id="sex" name="sex">
+              <option value="male" {{ 'selected' if settings.sex != 'female' }}>Erkek</option>
+              <option value="female" {{ 'selected' if settings.sex == 'female' }}>Kadın</option>
+            </select>
+            <span class="hint">Yağ oranı formülü buna göre değişir</span>
+          </div>
+          <div class="field">
+            <label for="birth_date">Doğum tarihi</label>
+            <input type="date" id="birth_date" name="birth_date" value="{{ settings.birth_date }}">
+            <span class="hint">İsteğe bağlı — yaş göstermek için</span>
+          </div>
         </div>
         <div class="actions"><button class="btn btn--primary" type="submit">Kaydet</button></div>
       </form>
@@ -42,11 +61,13 @@
       <dl class="kv" style="margin-bottom:14px">
         <dt>Kayıtlı antrenman</dt><dd>{{ info.workouts }}</dd>
         <dt>İlk / son kayıt</dt><dd>{{ info.first | gun if info.first else '—' }} → {{ info.last | gun if info.last else '—' }}</dd>
+        <dt>Vücut ölçümü</dt><dd>{{ measurement_count }}</dd>
         <dt>Veritabanı boyutu</dt><dd>{{ info.size_kb | tr(1) }} KB</dd>
       </dl>
       <div class="actions">
         <a class="btn" href="{{ url_for('export_excel') }}">📊 Excel (.xlsx)</a>
-        <a class="btn" href="{{ url_for('export_csv') }}">📄 CSV</a>
+        <a class="btn" href="{{ url_for('export_csv') }}">📄 Antrenman CSV</a>
+        <a class="btn" href="{{ url_for('export_measurements_csv') }}">📏 Ölçüm CSV</a>
         <a class="btn" href="{{ url_for('export_db') }}">💾 Veritabanı (.db)</a>
       </div>
       <p class="hint" style="margin-top:10px">

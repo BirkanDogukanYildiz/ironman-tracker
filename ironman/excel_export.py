@@ -52,6 +52,7 @@ FMT_DPCT = '+0.0%;-0.0%;0.0%'
 SH_DASH, SH_LVL, SH_LOG = "DASHBOARD", "SEVİYELER", "ANTRENMAN KAYIT"
 SH_WEEK, SH_BR, SH_BRICK = "HAFTALIK TAKİP", "BRANŞ İLERLEME", "BRICK"
 SH_GOAL, SH_HELP, SH_SET = "HEDEFLER", "NASIL KULLANILIR", "AYARLAR"
+SH_BODY = "ÖLÇÜMLER"
 BRQ = f"'{SH_BR}'"
 
 
@@ -153,10 +154,11 @@ def _to_date(value):
 
 # ==========================================================================
 def build_workbook(out_path, *, workouts=None, goals=None, thresholds=None,
-                   settings=None, n_week=160):
+                   settings=None, measurements=None, n_week=160):
     """Çalışma kitabını üretir ve `out_path`e kaydeder."""
     workouts = sorted(workouts or [], key=lambda w: (str(w["date"]), w.get("id") or 0))
     goals = goals or []
+    measurements = sorted(measurements or [], key=lambda m: str(m['date']))
     settings = settings or {}
     athlete = settings.get("athlete_name") or "Sporcu"
     start_date = _to_date(settings.get("start_date")) or dt.date.today()
@@ -186,6 +188,7 @@ def build_workbook(out_path, *, workouts=None, goals=None, thresholds=None,
     ws_br = wb.create_sheet(SH_BR)
     ws_brick = wb.create_sheet(SH_BRICK)
     ws_goal = wb.create_sheet(SH_GOAL)
+    ws_body = wb.create_sheet(SH_BODY)
     ws_help = wb.create_sheet(SH_HELP)
     ws_set = wb.create_sheet(SH_SET)
 
@@ -204,13 +207,14 @@ def build_workbook(out_path, *, workouts=None, goals=None, thresholds=None,
     _sheet_weekly(ws_week, n_week)
     _sheet_brick(ws_brick, workouts, n_brick)
     _sheet_goals(ws_goal, goals)
+    _sheet_body(ws_body, measurements, settings)
     _sheet_chartdata(ws_set)
     _sheet_dashboard(ws_dash, athlete, len(goals))
     _sheet_help(ws_help, athlete, sw_t, bk_t, rn_t)
 
     wb.active = 0
     title_rows = {SH_LOG: "1:1", SH_WEEK: "1:1", SH_LVL: "3:3",
-                  SH_BRICK: "3:3", SH_GOAL: "3:3"}
+                  SH_BRICK: "3:3", SH_GOAL: "3:3", SH_BODY: "5:5"}
     for ws in wb.worksheets:
         ws.page_setup.orientation = "landscape"
         ws.page_setup.fitToWidth = 1
@@ -1142,6 +1146,7 @@ def _sheet_help(N, athlete, sw_t, bk_t, rn_t):
         ("BRANŞ İLERLEME", "Otomatik", "Branş bazlı detaylı analiz ve seviye motorunun çıktıları."),
         ("BRICK", "Sadece tarih", "Bisiklet→koşu antrenmanları; tarihler otomatik dolduruldu."),
         ("HEDEFLER", "Hedef tarihi", "Kilometre taşları; sadece tarihleri düzenleyin."),
+        ("ÖLÇÜMLER", "★ Elle giriş", "Kilo, bel, boyun, omuz; yağ oranı otomatik hesaplanır."),
         ("AYARLAR", "İsteğe bağlı", "Açılır liste seçenekleri ve seviye eşikleri."),
     ]
     header_row(N, 6, ["Sayfa", "Rolünüz", "Ne işe yarar?", "", "", "", "", ""], 2, 26)
@@ -1205,3 +1210,129 @@ def _sheet_help(N, athlete, sw_t, bk_t, rn_t):
          color=IRON, bold=True, height=30)
     para(42, f"Bol şans {athlete} — her hafta bir adım yeter. 🏁", bold=True, color=IRON,
          size=11, height=26)
+
+
+# ==========================================================================
+# ÖLÇÜMLER
+# ==========================================================================
+BODY_HEAD = ["Tarih", "Kilo (kg)", "Bel (cm)", "Boyun (cm)", "Omuz (cm)", "Boy (cm)",
+             "Yağ Oranı", "Yağsız Kitle (kg)", "Yağ Kitlesi (kg)", "Omuz / Bel",
+             "BMI", "Δ Kilo", "Δ Bel", "Not"]
+
+
+def _sheet_body(B, measurements, settings, n_rows=150):
+    """Vücut ölçümleri — yağ oranı US Navy formülüyle canlı hesaplanır."""
+    default_h = 0.0
+    try:
+        default_h = float(settings.get("height_cm") or 0)
+    except (TypeError, ValueError):
+        default_h = 0.0
+
+    merge_set(B, 1, 1, 1, 14, "📏  VÜCUT ÖLÇÜMLERİ",
+              f(14, True, WHITE), al("left", "center", indent=1), NAVY)
+    B.row_dimensions[1].height = 30
+    merge_set(B, 2, 1, 2, 14,
+              "Sarı sütunları doldurun (tarih · kilo · bel · boyun · omuz · boy). "
+              "Yağ oranı, yağsız kitle, yağ kitlesi ve omuz/bel oranı otomatik hesaplanır.",
+              f(9, False, MUTED), al("left", "center", True, indent=1))
+    B.row_dimensions[2].height = 24
+
+    first = 5
+    last = first + n_rows - 1
+    # özet şeridi
+    cards = [
+        ("GÜNCEL KİLO", f'=IFERROR(LOOKUP(2,1/($B${first}:$B${last}<>""),$B${first}:$B${last}),"")',
+         '#,##0.0" kg"', IRON),
+        ("GÜNCEL BEL", f'=IFERROR(LOOKUP(2,1/($C${first}:$C${last}<>""),$C${first}:$C${last}),"")',
+         '#,##0.0" cm"', SWIM),
+        ("GÜNCEL YAĞ ORANI", f'=IFERROR(LOOKUP(2,1/($G${first}:$G${last}<>""),$G${first}:$G${last}),"")',
+         FMT_PCT, BIKE),
+        ("YAĞSIZ KİTLE", f'=IFERROR(LOOKUP(2,1/($H${first}:$H${last}<>""),$H${first}:$H${last}),"")',
+         '#,##0.0" kg"', RUN),
+    ]
+    for i, (title, formula, fmt, acc) in enumerate(cards):
+        c1 = 1 + i * 3
+        fill_range(B, 3, c1, 3, c1 + 2, WHITE)
+        merge_set(B, 3, c1, 3, c1 + 2, title, f(8, True, MUTED), al("left", "center", indent=1))
+        cell = merge_set(B, 4, c1, 4, c1 + 2, formula, f(15, True, acc),
+                         al("left", "center", indent=1), numfmt=fmt)
+        apply_box(B, 3, c1, 4, c1 + 2, color=LINE, left_accent=acc)
+    B.row_dimensions[3].height = 15
+    B.row_dimensions[4].height = 26
+
+    header_row(B, 5, BODY_HEAD, 1, 34)
+    widths(B, {"A": 13, "B": 11, "C": 10.5, "D": 11, "E": 10.5, "F": 10.5, "G": 11.5,
+               "H": 15.5, "I": 15.5, "J": 11.5, "K": 9, "L": 10.5, "M": 10.5, "N": 40})
+    B.freeze_panes = "B6"
+
+    for i in range(n_rows):
+        r = first + i
+        prev = r - 1
+        # G — US Navy formülü (erkek).  bel > boyun olmalı.
+        B.cell(row=r, column=7, value=(
+            f'=IF(OR($C{r}="",$D{r}="",$F{r}="",$C{r}<=$D{r}),"",'
+            f'(495/(1.0324-0.19077*LOG10($C{r}-$D{r})+0.15456*LOG10($F{r}))-450)/100)'))
+        B.cell(row=r, column=8, value=f'=IF(OR($B{r}="",$G{r}=""),"",$B{r}*(1-$G{r}))')
+        B.cell(row=r, column=9, value=f'=IF(OR($B{r}="",$G{r}=""),"",$B{r}*$G{r})')
+        B.cell(row=r, column=10, value=f'=IF(OR($E{r}="",$C{r}=""),"",$E{r}/$C{r})')
+        B.cell(row=r, column=11, value=f'=IF(OR($B{r}="",$F{r}=""),"",$B{r}/(($F{r}/100)^2))')
+        if i == 0:
+            B.cell(row=r, column=12, value='=""')
+            B.cell(row=r, column=13, value='=""')
+        else:
+            B.cell(row=r, column=12, value=f'=IF(OR($B{r}="",$B{prev}=""),"",$B{r}-$B{prev})')
+            B.cell(row=r, column=13, value=f'=IF(OR($C{r}="",$C{prev}=""),"",$C{r}-$C{prev})')
+
+        B.row_dimensions[r].height = 17
+        for c in range(1, 15):
+            cell = B.cell(row=r, column=c)
+            cell.border = Border(bottom=side("EEF2F7"), right=side("EEF2F7"))
+            cell.alignment = al("center") if c != 14 else al("left", "center", indent=1)
+            cell.fill = fill(WHITE if i % 2 == 0 else BG)
+            if c in (1, 2, 3, 4, 5, 6, 14):
+                cell.font = f(10, False, INPUT_FONT)
+                cell.fill = fill(INPUT_FILL)
+            else:
+                cell.font = f(10, False, MUTED)
+                cell.fill = fill(GREY_BG)
+        B.cell(row=r, column=1).number_format = FMT_DATE
+        for c, fmt in ((2, FMT_KM2), (3, FMT_KM1), (4, FMT_KM1), (5, FMT_KM1),
+                       (6, FMT_KM1), (7, '0.00%'), (8, FMT_KM2), (9, FMT_KM2),
+                       (10, '0.000'), (11, FMT_KM1)):
+            B.cell(row=r, column=c).number_format = fmt
+        B.cell(row=r, column=12).number_format = '+0.00;-0.00;0.00'
+        B.cell(row=r, column=13).number_format = '+0.0;-0.0;0.0'
+
+    # gerçek veriler
+    for i, m in enumerate(measurements[:n_rows]):
+        r = first + i
+        B.cell(row=r, column=1, value=_to_date(m.get("date")))
+        B.cell(row=r, column=2, value=m.get("weight_kg"))
+        B.cell(row=r, column=3, value=m.get("waist_cm"))
+        B.cell(row=r, column=4, value=m.get("neck_cm"))
+        B.cell(row=r, column=5, value=m.get("shoulder_cm"))
+        B.cell(row=r, column=6, value=m.get("height_cm") or (default_h or None))
+        B.cell(row=r, column=14, value=(m.get("notes") or "")[:200])
+
+    B.auto_filter.ref = f"A5:N{last}"
+    B.conditional_formatting.add(f"L{first}:L{last}", CellIsRule(
+        operator="lessThan", formula=["0"], font=f(10, True, OK_G)))
+    B.conditional_formatting.add(f"L{first}:L{last}", CellIsRule(
+        operator="greaterThan", formula=["0"], font=f(10, True, IRON)))
+    B.conditional_formatting.add(f"M{first}:M{last}", CellIsRule(
+        operator="lessThan", formula=["0"], font=f(10, True, OK_G)))
+    B.conditional_formatting.add(f"M{first}:M{last}", CellIsRule(
+        operator="greaterThan", formula=["0"], font=f(10, True, IRON)))
+    B.conditional_formatting.add(f"G{first}:G{last}", DataBarRule(
+        start_type="num", start_value=0, end_type="num", end_value=0.5, color=BIKE))
+
+    dv = DataValidation(type="date", operator="greaterThan", formula1="DATE(1950,1,1)",
+                        allow_blank=True)
+    B.add_data_validation(dv)
+    dv.add(f"A{first}:A{last}")
+    B.cell(row=5, column=7).comment = Comment(
+        "US Navy formülü (erkek):\n"
+        "495 / (1,0324 − 0,19077·log10(bel−boyun) + 0,15456·log10(boy)) − 450\n\n"
+        "Kadın için formül farklıdır ve kalça ölçüsü gerektirir; uygulamadaki\n"
+        "Ayarlar → Cinsiyet seçeneğinden değiştirilebilir.",
+        "IRONMAN Takip", height=130, width=300)

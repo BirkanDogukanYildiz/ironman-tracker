@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Telefondan Bağlan · {{ APP_NAME }}{% endblock %}
+
+{% block content %}
+<h1 style="font-size:19px;margin-bottom:4px">📱 Telefondan bağlan</h1>
+<p class="muted small" style="margin:0 0 18px">
+  Telefonun ve bu bilgisayarın <b>aynı Wi-Fi ağında</b> olması gerekir.
+</p>
+
+{% if not listening_all %}
+<div class="callout" style="margin-bottom:16px">
+  ⚠️ <b>Uygulama şu an sadece bu bilgisayara açık.</b>
+  Telefondan bağlanmak için kapatıp <code>--telefon</code> ile yeniden başlatın:
+  Windows'ta <code>run-telefon.bat</code>, Mac/Linux'ta <code>./run-telefon.sh</code>.
+</div>
+{% endif %}
+
+{% if not cards %}
+<div class="card">
+  <div class="empty">
+    <div class="empty__icon">📶</div>
+    <h3>Ağ adresi bulunamadı</h3>
+    <p class="muted">Bilgisayar bir ağa bağlı görünmüyor. Wi-Fi bağlantısını kontrol edin.</p>
+  </div>
+</div>
+{% else %}
+
+<div class="grid grid--2">
+  {% for c in cards %}
+    <div class="card {{ '' if c.likely else 'is-secondary' }}">
+      <div class="card__head" style="border-left:4px solid {{ 'var(--iron)' if loop.first else 'var(--line)' }}">
+        <h3>{{ 'Bu adresi deneyin' if loop.first else 'Alternatif adres' }}</h3>
+        {% if not c.likely %}<span class="badge badge--warn">{{ c.note }}</span>{% endif %}
+      </div>
+      <div class="card__pad" style="text-align:center">
+        {% if c.qr %}
+          <div class="qrbox">{{ c.qr | safe }}</div>
+          <p class="hint" style="margin:10px 0 0">
+            iPhone kamerasını QR koda tutun → çıkan bildirime dokunun
+          </p>
+        {% endif %}
+        <p class="phone-url">{{ c.url }}</p>
+        <button class="btn btn--sm" type="button" data-copy="{{ c.url }}">Adresi kopyala</button>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+<div class="section"><h2>Adım adım</h2></div>
+<div class="grid grid--2">
+  <div class="card card__pad">
+    <h3 style="font-size:14px;margin-bottom:10px">iPhone'da</h3>
+    <ol class="steps">
+      <li>Telefonun <b>Wi-Fi</b>'a bağlı olduğundan emin olun (mobil veri değil, aynı ev ağı).</li>
+      <li><b>Kamera</b> uygulamasını açın, yukarıdaki QR koda tutun, çıkan sarı bildirime dokunun.
+          QR yoksa Safari'yi açıp adresi elle yazın.</li>
+      <li>Uygulama açıldığında alttaki <b>Paylaş</b> düğmesine (kare + yukarı ok) dokunun.</li>
+      <li><b>Ana Ekrana Ekle</b>'yi seçin — artık normal bir uygulama gibi simgesi olur.</li>
+    </ol>
+    <div class="callout callout--info" style="margin-top:12px">
+      Safari “güvenli değil” uyarısı verebilir; bu normaldir — bağlantı ev ağınızın içinde kalır,
+      internete çıkmaz.
+    </div>
+  </div>
+
+  <div class="card card__pad">
+    <h3 style="font-size:14px;margin-bottom:10px">Bağlanamıyorsanız</h3>
+    <ol class="steps">
+      <li><b>Windows güvenlik duvarı</b> — uygulamayı ilk açtığınızda çıkan pencerede
+          <b>“Özel ağlar”</b> kutusunu işaretleyip <b>Erişime izin ver</b> demelisiniz.
+          Kaçırdıysanız: Windows Güvenliği → Güvenlik duvarı → Uygulamaya izin ver → Python.</li>
+      <li><b>Ağ profili</b> — Wi-Fi'ınız Windows'ta “Genel” yerine <b>“Özel”</b> olmalı.
+          Ayarlar → Ağ ve İnternet → Wi-Fi → ağ adı → Özel.</li>
+      <li><b>Yanlış adres</b> — birden fazla adres varsa hepsini deneyin; VPN açıksa kapatın.</li>
+      <li><b>Misafir ağı</b> — telefon ile PC farklı ağlardaysa (ör. biri 2.4 GHz misafir ağında)
+          birbirlerini göremezler. İkisini de aynı ağa alın.</li>
+      <li>Bilgisayar uykuya geçerse bağlantı kopar — kayıt sırasında açık kalmalı.</li>
+    </ol>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<style>
+  .qrbox { display:inline-block; padding:12px; background:#fff; border-radius:var(--r);
+           border:1px solid var(--line); }
+  .qrbox svg { width:190px; height:190px; display:block; }
+  .phone-url { font-family:var(--mono); font-size:17px; font-weight:700; margin:14px 0 10px;
+               word-break:break-all; color:var(--iron); }
+  .steps { margin:0; padding-left:20px; display:grid; gap:9px; font-size:13px; }
+  .steps li { line-height:1.55; }
+  .is-secondary { opacity:.72; }
+</style>
+<script>
+  document.querySelectorAll("[data-copy]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var t = b.getAttribute("data-copy");
+      var done = function () { var o = b.textContent; b.textContent = "✓ Kopyalandı";
+                               setTimeout(function () { b.textContent = o; }, 1600); };
+      if (navigator.clipboard) { navigator.clipboard.writeText(t).then(done, done); }
+      else {
+        var i = document.createElement("input"); i.value = t; document.body.appendChild(i);
+        i.select(); try { document.execCommand("copy"); } catch (e) {}
+        document.body.removeChild(i); done();
+      }
+    });
+  });
+</script>
+{% endblock %}

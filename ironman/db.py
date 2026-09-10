@@ -10,11 +10,11 @@ from typing import Any, Iterable, Optional
 
 from .config import (
     DB_PATH, DATA_DIR, BACKUP_DIR, EXPORT_DIR,
-    DEFAULT_THRESHOLDS, DEFAULT_GOALS, DEFAULT_SETTINGS,
+    DEFAULT_THRESHOLDS, DEFAULT_GOALS, DEFAULT_SETTINGS, INITIAL_MEASUREMENTS,
     LEVEL_NAMES, LEVEL_DETAIL, SPORT_ORDER,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 PRAGMA journal_mode = WAL;
@@ -79,6 +79,23 @@ CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT
 );
+
+CREATE TABLE IF NOT EXISTS measurements (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    date          TEXT    NOT NULL UNIQUE,       -- günde tek ölçüm
+    weight_kg     REAL,
+    waist_cm      REAL,
+    neck_cm       REAL,
+    shoulder_cm   REAL,
+    hip_cm        REAL,
+    height_cm     REAL,                          -- boş ise ayarlardaki boy
+    body_fat_pct  REAL,                          -- elle girilirse formülü ezer
+    notes         TEXT,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_measurements_date ON measurements(date DESC);
 """
 
 
@@ -151,6 +168,20 @@ def _seed(conn: sqlite3.Connection) -> None:
             "INSERT INTO settings(key, value) VALUES(?,?) ON CONFLICT(key) DO NOTHING",
             (key, value),
         )
+
+    # ilk vücut ölçümleri (Excel'den) — yalnızca tablo tamamen boşken
+    already = conn.execute(
+        "SELECT value FROM meta WHERE key = 'measurements_seeded'").fetchone()
+    empty = conn.execute("SELECT COUNT(*) c FROM measurements").fetchone()["c"] == 0
+    if empty and not already and INITIAL_MEASUREMENTS:
+        ts = now_iso()
+        conn.executemany(
+            "INSERT OR IGNORE INTO measurements(date, weight_kg, waist_cm, neck_cm,"
+            " shoulder_cm, notes, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+            [(d, kg, bel, boyun, omuz, note, ts, ts)
+             for d, kg, bel, boyun, omuz, note in INITIAL_MEASUREMENTS],
+        )
+        conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('measurements_seeded','1')")
 
 
 # --------------------------------------------------------------------------
@@ -372,6 +403,64 @@ def add_goal(conn, data: dict) -> int:
 def delete_goal(conn, gid: int) -> None:
     conn.execute("DELETE FROM goals WHERE id = ?", (gid,))
     conn.commit()
+
+
+# --------------------------------------------------------------------------
+# Vücut ölçümleri
+# --------------------------------------------------------------------------
+MEASUREMENT_FIELDS = ("date", "weight_kg", "waist_cm", "neck_cm", "shoulder_cm",
+                      "hip_cm", "height_cm", "body_fat_pct", "notes")
+
+
+def list_measurements(conn, order: str = "DESC", limit: int | None = None) -> list[dict]:
+    sql = f"SELECT * FROM measurements ORDER BY date {order}"
+    if limit:
+        sql += f" LIMIT {int(limit)}"
+    return list(conn.execute(sql))
+
+
+def get_measurement(conn, mid: int) -> Optional[dict]:
+    return conn.execute("SELECT * FROM measurements WHERE id = ?", (mid,)).fetchone()
+
+
+def get_measurement_by_date(conn, day: str) -> Optional[dict]:
+    return conn.execute("SELECT * FROM measurements WHERE date = ?", (day,)).fetchone()
+
+
+def add_measurement(conn, data: dict) -> int:
+    """Aynı tarihe ikinci ölçüm girilirse mevcut kayıt güncellenir."""
+    existing = get_measurement_by_date(conn, data.get("date"))
+    if existing:
+        update_measurement(conn, existing["id"], data)
+        return existing["id"]
+    ts = now_iso()
+    cols = ", ".join(MEASUREMENT_FIELDS) + ", created_at, updated_at"
+    marks = ", ".join("?" * (len(MEASUREMENT_FIELDS) + 2))
+    cur = conn.execute(
+        f"INSERT INTO measurements({cols}) VALUES ({marks})",
+        [data.get(k) for k in MEASUREMENT_FIELDS] + [ts, ts],
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def update_measurement(conn, mid: int, data: dict) -> None:
+    payload = {k: data[k] for k in MEASUREMENT_FIELDS if k in data}
+    if not payload:
+        return
+    sets = ", ".join(f"{k} = ?" for k in payload) + ", updated_at = ?"
+    conn.execute(f"UPDATE measurements SET {sets} WHERE id = ?",
+                 list(payload.values()) + [now_iso(), mid])
+    conn.commit()
+
+
+def delete_measurement(conn, mid: int) -> None:
+    conn.execute("DELETE FROM measurements WHERE id = ?", (mid,))
+    conn.commit()
+
+
+def count_measurements(conn) -> int:
+    return conn.execute("SELECT COUNT(*) c FROM measurements").fetchone()["c"]
 
 
 # --------------------------------------------------------------------------

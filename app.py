@@ -19,7 +19,7 @@ from pathlib import Path
 from flask import (Flask, abort, flash, g, jsonify, redirect, render_template,
                    request, send_file, session, url_for)
 
-from ironman import __version__, backup, charts, db
+from ironman import __version__, backup, body, charts, db, network
 from ironman.config import (APP_NAME, APP_TAGLINE, DATA_DIR, EXPORT_DIR, LEVEL_NAMES,
                             MAX_LEVEL, SPORT_META, SPORT_ORDER, WORKOUT_KINDS)
 from ironman.excel_export import build_workbook
@@ -222,6 +222,10 @@ def dashboard():
              "color": SPORT_META[s]["color"]} for s in SPORT_ORDER]),
         "recent": db.list_workouts(conn, limit=8),
     }
+    bseries = body.build_series(db.list_measurements(conn), **_body_context(conn))
+    ctx["body"] = body.summarize(bseries)
+    ctx["body_spark"] = (charts.sparkline([m.weight_kg or 0 for m in bseries], "#e11d48")
+                         if len(bseries) > 1 else None)
     return render_template("dashboard.html", **ctx)
 
 
@@ -506,7 +510,8 @@ def export_excel():
                    workouts=db.list_workouts(conn, order="ASC"),
                    goals=db.list_goals(conn),
                    thresholds=db.get_thresholds(conn),
-                   settings=db.get_settings(conn))
+                   settings=db.get_settings(conn),
+                   measurements=db.list_measurements(conn, order="ASC"))
     return send_file(path, as_attachment=True, download_name=path.name)
 
 
@@ -549,15 +554,20 @@ def settings_page():
                            settings=db.get_settings(conn),
                            thresholds=db.get_thresholds(conn),
                            backups=backup.list_backups(),
-                           info=db.db_stats(conn))
+                           info=db.db_stats(conn),
+                           measurement_count=db.count_measurements(conn))
 
 
 @app.route("/ayarlar/kaydet", methods=["POST"])
 def settings_save():
     conn = get_db()
-    for key in ("athlete_name", "weekly_hour_target"):
+    for key in ("athlete_name", "weekly_hour_target", "height_cm"):
         if key in request.form:
-            db.set_setting(conn, key, (request.form.get(key) or "").strip())
+            db.set_setting(conn, key, (request.form.get(key) or "").strip().replace(",", "."))
+    if request.form.get("sex") in ("male", "female"):
+        db.set_setting(conn, "sex", request.form["sex"])
+    bd = parse_date(request.form.get("birth_date") or "")
+    db.set_setting(conn, "birth_date", bd.isoformat() if bd else "")
     sd = parse_date(request.form.get("start_date") or "")
     if sd:
         db.set_setting(conn, "start_date", sd.isoformat())
@@ -625,6 +635,182 @@ def wipe():
     return redirect(url_for("settings_page"))
 
 
+# ==========================================================================
+# VÜCUT ÖLÇÜMLERİ
+# ==========================================================================
+def _body_context(conn):
+    s = db.get_settings(conn)
+    height = None
+    try:
+        height = float(s.get("height_cm") or 0) or None
+    except ValueError:
+        height = None
+    return {"height_cm": height, "sex": s.get("sex") or "male",
+            "birth_date": s.get("birth_date") or None}
+
+
+def _form_to_measurement() -> dict:
+    day = (request.form.get("date") or "").strip()
+    return {
+        "date": day,
+        "weight_kg": _f("weight_kg", float),
+        "waist_cm": _f("waist_cm", float),
+        "neck_cm": _f("neck_cm", float),
+        "shoulder_cm": _f("shoulder_cm", float),
+        "hip_cm": _f("hip_cm", float),
+        "height_cm": _f("height_cm", float),
+        "body_fat_pct": _f("body_fat_pct", float),
+        "notes": (request.form.get("notes") or "").strip() or None,
+    }
+
+
+def _validate_measurement(data: dict) -> list[str]:
+    errors = []
+    if not parse_date(data["date"]):
+        errors.append("Geçerli bir tarih girin.")
+    numeric = ("weight_kg", "waist_cm", "neck_cm", "shoulder_cm", "hip_cm", "height_cm")
+    if not any(data.get(k) for k in numeric) and not data.get("body_fat_pct"):
+        errors.append("En az bir ölçüm girin (kilo, bel, boyun, omuz…).")
+    for key, label, lo, hi in (("weight_kg", "Kilo", 20, 400),
+                               ("waist_cm", "Bel", 30, 250),
+                               ("neck_cm", "Boyun", 20, 90),
+                               ("shoulder_cm", "Omuz", 50, 250),
+                               ("hip_cm", "Kalça", 40, 250),
+                               ("height_cm", "Boy", 100, 250),
+                               ("body_fat_pct", "Yağ oranı", 1, 70)):
+        v = data.get(key)
+        if v is not None and not (lo <= v <= hi):
+            errors.append(f"{label} değeri mantıklı aralıkta değil ({lo}–{hi}).")
+    if data.get("waist_cm") and data.get("neck_cm") and data["waist_cm"] <= data["neck_cm"]:
+        errors.append("Bel çevresi boyun çevresinden büyük olmalı (yağ oranı formülü için).")
+    return errors
+
+
+@app.route("/olcumler")
+def body_page():
+    conn = get_db()
+    ctx = _body_context(conn)
+    rows = db.list_measurements(conn)
+    series = body.build_series(rows, **ctx)
+    summary = body.summarize(series)
+
+    labels = [f"{m.day.day:02d}.{m.day.month:02d}" for m in series]
+    weights = [m.weight_kg or 0 for m in series]
+    waists = [m.waist_cm or 0 for m in series]
+    fats = [(m.body_fat or 0) * 100 for m in series]
+
+    charts_ = {}
+    if series:
+        charts_["weight"] = charts.line_chart(labels, weights, "#e11d48", unit="kg",
+                                              decimals=1, tight=True, height=230)
+        charts_["waist"] = charts.line_chart(labels, waists, "#0284c7", unit="cm",
+                                             decimals=1, tight=True, height=230)
+        charts_["fat"] = charts.line_chart(labels, fats, "#d97706", unit="%",
+                                           decimals=1, tight=True, height=230)
+        charts_["comp"] = charts.stacked_chart(labels, [
+            {"name": "Yağsız kitle", "color": "#059669",
+             "values": [m.lean_mass_kg or 0 for m in series]},
+            {"name": "Yağ kitlesi", "color": "#d97706",
+             "values": [m.fat_mass_kg or 0 for m in series]},
+        ], unit="kg", height=230)
+
+    return render_template("body.html", series=list(reversed(series)), summary=summary,
+                           charts_=charts_, settings=db.get_settings(conn),
+                           today=date.today().isoformat())
+
+
+@app.route("/olcumler/yeni", methods=["POST"])
+def measurement_new():
+    conn = get_db()
+    data = _form_to_measurement()
+    errors = _validate_measurement(data)
+    if errors:
+        for e in errors:
+            flash(e, "error")
+        return redirect(url_for("body_page"))
+    day = parse_date(data["date"]).isoformat()
+    data["date"] = day
+    existed = db.get_measurement_by_date(conn, day)
+    db.add_measurement(conn, data)
+    flash("Ölçüm güncellendi." if existed else "Ölçüm kaydedildi. 📏", "ok")
+    return redirect(url_for("body_page"))
+
+
+@app.route("/olcumler/<int:mid>/duzenle", methods=["GET", "POST"])
+def measurement_edit(mid):
+    conn = get_db()
+    row = db.get_measurement(conn, mid)
+    if not row:
+        abort(404)
+    if request.method == "POST":
+        data = _form_to_measurement()
+        errors = _validate_measurement(data)
+        if errors:
+            for e in errors:
+                flash(e, "error")
+            data["id"] = mid
+            return render_template("body_form.html", m=data)
+        clash = db.get_measurement_by_date(conn, parse_date(data["date"]).isoformat())
+        if clash and clash["id"] != mid:
+            flash("O tarihte zaten bir ölçüm var. Önce onu silin veya düzenleyin.", "error")
+            data["id"] = mid
+            return render_template("body_form.html", m=data)
+        data["date"] = parse_date(data["date"]).isoformat()
+        db.update_measurement(conn, mid, data)
+        flash("Ölçüm güncellendi.", "ok")
+        return redirect(url_for("body_page"))
+    return render_template("body_form.html", m=row)
+
+
+@app.route("/olcumler/<int:mid>/sil", methods=["POST"])
+def measurement_delete(mid):
+    db.delete_measurement(get_db(), mid)
+    flash("Ölçüm silindi.", "ok")
+    return redirect(url_for("body_page"))
+
+
+@app.route("/disa-aktar/olcumler.csv")
+def export_measurements_csv():
+    conn = get_db()
+    ctx = _body_context(conn)
+    series = body.build_series(db.list_measurements(conn), **ctx)
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(["Tarih", "Kilo (kg)", "Bel (cm)", "Boyun (cm)", "Omuz (cm)", "Boy (cm)",
+                "Yağ oranı (%)", "Yağsız kitle (kg)", "Yağ kitlesi (kg)",
+                "Omuz/Bel", "BMI", "Not"])
+
+    def d(v, n=2):
+        return "" if v is None else f"{v:.{n}f}".replace(".", ",")
+
+    for m in series:
+        w.writerow([m.day.isoformat(), d(m.weight_kg), d(m.waist_cm, 1), d(m.neck_cm, 1),
+                    d(m.shoulder_cm, 1), d(m.height_cm, 1),
+                    d(m.body_fat * 100 if m.body_fat else None), d(m.lean_mass_kg),
+                    d(m.fat_mass_kg), d(m.v_ratio, 3), d(m.bmi), m.notes or ""])
+    data = io.BytesIO(("﻿" + buf.getvalue()).encode("utf-8"))
+    return send_file(data, mimetype="text/csv", as_attachment=True,
+                     download_name=f"olcumler_{date.today():%Y%m%d}.csv")
+
+
+# ==========================================================================
+# TELEFONDAN BAĞLANMA
+# ==========================================================================
+@app.route("/telefon")
+def phone_page():
+    port = request.host.split(":")[-1] if ":" in request.host else "5000"
+    addresses = network.lan_addresses()
+    listening_all = app.config.get("LISTEN_HOST") == "0.0.0.0"
+    cards = []
+    for a in addresses:
+        url = f"http://{a.ip}:{port}"
+        cards.append({"ip": a.ip, "url": url, "likely": a.likely, "note": a.note,
+                      "qr": network.qr_svg(url)})
+    return render_template("phone.html", cards=cards, port=port,
+                           listening_all=listening_all,
+                           qr_available=bool(cards and cards[0]["qr"]))
+
+
 # --------------------------------------------------------------------------
 @app.route("/saglik")
 def health():
@@ -644,34 +830,43 @@ def server_error(e):
 
 
 # --------------------------------------------------------------------------
-def _lan_ip() -> str:
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(("10.255.255.255", 1))
-        return s.getsockname()[0]
-    except OSError:
-        return "127.0.0.1"
-    finally:
-        s.close()
-
-
 def main():
     ap = argparse.ArgumentParser(description="IRONMAN Antrenman & Seviye Takip Sistemi")
     ap.add_argument("--host", default="127.0.0.1",
                     help="0.0.0.0 verilirse aynı ağdaki telefondan da açılır")
     ap.add_argument("--port", type=int, default=5000)
+    ap.add_argument("--telefon", action="store_true",
+                    help="--host 0.0.0.0 ile aynı: telefondan erişime aç")
     ap.add_argument("--debug", action="store_true")
     args = ap.parse_args()
 
+    host = "0.0.0.0" if args.telefon else args.host
+    app.config["LISTEN_HOST"] = host
     bootstrap()
+
+    line = "─" * 54
     print(f"\n  🏊 🚴 🏃  {APP_NAME} v{__version__}")
-    print(f"  ──────────────────────────────────────────────")
-    print(f"  Tarayıcıda aç:  http://127.0.0.1:{args.port}")
-    if args.host == "0.0.0.0":
-        print(f"  Telefondan:     http://{_lan_ip()}:{args.port}")
-    print(f"  Veritabanı:     {db.DB_PATH}")
-    print(f"  Durdurmak için: Ctrl+C\n")
-    app.run(host=args.host, port=args.port, debug=args.debug)
+    print(f"  {line}")
+    print(f"  Bu bilgisayarda :  http://127.0.0.1:{args.port}")
+    if host == "0.0.0.0":
+        addrs = network.lan_addresses()
+        if addrs:
+            print(f"  Telefondan      :  http://{addrs[0].ip}:{args.port}")
+            for extra in addrs[1:]:
+                tag = f"   ({extra.note})" if extra.note else ""
+                print(f"     ya da        :  http://{extra.ip}:{args.port}{tag}")
+        else:
+            print("  Telefondan      :  ağ adresi bulunamadı — Wi-Fi bağlı mı?")
+        print(f"  QR kod          :  http://127.0.0.1:{args.port}/telefon")
+        print(f"  {line}")
+        print("  Windows ilk açılışta güvenlik duvarı soracak →")
+        print("  «Özel ağlar» kutusunu işaretleyip ERİŞİME İZİN VER deyin.")
+    else:
+        print(f"  Telefondan açmak için:  --telefon parametresiyle başlatın")
+    print(f"  {line}")
+    print(f"  Veritabanı      :  {db.DB_PATH}")
+    print(f"  Durdurmak için  :  Ctrl+C\n")
+    app.run(host=host, port=args.port, debug=args.debug)
 
 
 bootstrap()

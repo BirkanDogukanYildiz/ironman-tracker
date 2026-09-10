@@ -132,6 +132,38 @@
   </div>
 </div>
 
+{% if body.has_data %}
+<div class="section"><h2>Vücut Ölçümleri</h2></div>
+<div class="grid grid--4">
+  <div class="card stat stat--iron">
+    <div class="stat__label">Güncel kilo</div>
+    <div class="stat__value">{{ body.latest.weight_kg | tr(1) }}<span class="small muted"> kg</span></div>
+    <div class="stat__sub">{{ body.latest.day | gun }}
+      {%- if body.total_weight is not none %} · başlangıçtan {{ '+' if body.total_weight > 0 }}{{ body.total_weight | tr(1) }} kg{% endif %}</div>
+  </div>
+  <div class="card stat stat--swim">
+    <div class="stat__label">Bel çevresi</div>
+    <div class="stat__value">{{ body.latest.waist_cm | tr(1) }}<span class="small muted"> cm</span></div>
+    <div class="stat__sub">
+      {%- if body.total_waist is not none -%}
+        <span style="color:{{ 'var(--ok)' if body.total_waist < 0 else 'var(--muted)' }};font-weight:700">
+        {{ '+' if body.total_waist > 0 }}{{ body.total_waist | tr(1) }} cm</span> ({{ body.span_days }} günde)
+      {%- else -%}—{%- endif -%}
+    </div>
+  </div>
+  <div class="card stat stat--bike">
+    <div class="stat__label">Yağ oranı</div>
+    <div class="stat__value">{{ body.latest.body_fat | pct(1) }}</div>
+    <div class="stat__sub">yağsız kitle {{ body.latest.lean_mass_kg | tr(1) }} kg</div>
+  </div>
+  <div class="card stat stat--slate">
+    <div class="stat__label">Kilo eğilimi</div>
+    <div style="margin:6px 0 2px">{{ body_spark if body_spark }}</div>
+    <div class="stat__sub"><a href="{{ url_for('body_page') }}">{{ body.count }} ölçüm · detaya git →</a></div>
+  </div>
+</div>
+{% endif %}
+
 <div class="section"><h2>Grafikler</h2></div>
 <div class="grid grid--2">
   <div class="card">

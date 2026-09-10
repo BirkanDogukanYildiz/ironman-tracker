@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+{% block title %}Ölçümler · {{ APP_NAME }}{% endblock %}
+
+{# good='down' → azalma yeşil · good='up' → artış yeşil · good='neutral' → renksiz.
+   Kilo bilerek nötrdür: rekomposizyonda kilo artışı kötü değildir. #}
+{% macro delta(value, unit, decimals=1, good='neutral') %}
+  {%- if value is none -%}
+    <span class="muted">—</span>
+  {%- elif good == 'neutral' or value == 0 -%}
+    <span class="muted" style="font-weight:700">{{ '+' if value > 0 }}{{ value | tr(decimals) }} {{ unit }}</span>
+  {%- else -%}
+    {%- set favourable = (value > 0 and good == 'up') or (value < 0 and good == 'down') -%}
+    <span style="color:{{ 'var(--ok)' if favourable else 'var(--muted)' }};font-weight:700">
+      {{ '+' if value > 0 }}{{ value | tr(decimals) }} {{ unit }}
+    </span>
+  {%- endif -%}
+{% endmacro %}
+
+{% block content %}
+<div class="split" style="margin-bottom:16px">
+  <div>
+    <h1 style="font-size:19px">📏 Vücut Ölçümleri</h1>
+    <p class="muted small" style="margin:4px 0 0">
+      Kilo, bel, boyun ve omuz · yağ oranı bunlardan otomatik hesaplanır
+    </p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="{{ url_for('export_measurements_csv') }}">CSV indir</a>
+    <a class="btn btn--primary" href="#yeni">＋ Yeni ölçüm</a>
+  </div>
+</div>
+
+{% if summary.has_data %}
+  {% set L = summary.latest %}
+  <div class="grid grid--4">
+    <div class="card stat stat--iron">
+      <div class="stat__label">Güncel kilo</div>
+      <div class="stat__value">{{ L.weight_kg | tr(1) }}<span class="small muted"> kg</span></div>
+      <div class="stat__sub">
+        {{ L.day | gun }} · başlangıca göre {{ delta(summary.total_weight, 'kg', 1, 'neutral') }}
+      </div>
+    </div>
+    <div class="card stat stat--swim">
+      <div class="stat__label">Bel çevresi</div>
+      <div class="stat__value">{{ L.waist_cm | tr(1) }}<span class="small muted"> cm</span></div>
+      <div class="stat__sub">başlangıca göre {{ delta(summary.total_waist, 'cm', 1, 'down') }}</div>
+    </div>
+    <div class="card stat stat--bike">
+      <div class="stat__label">Yağ oranı</div>
+      <div class="stat__value">{{ L.body_fat | pct }}</div>
+      <div class="stat__sub">
+        {% if summary.total_fat is not none %}
+          başlangıca göre
+          <span style="color:{{ 'var(--ok)' if summary.total_fat < 0 else 'var(--muted)' }};font-weight:700">
+            {{ '+' if summary.total_fat > 0 }}{{ (summary.total_fat * 100) | tr(2) }} puan</span>
+        {% else %}—{% endif %}
+      </div>
+    </div>
+    <div class="card stat stat--run">
+      <div class="stat__label">Yağsız kitle</div>
+      <div class="stat__value">{{ L.lean_mass_kg | tr(1) }}<span class="small muted"> kg</span></div>
+      <div class="stat__sub">
+        başlangıca göre {{ delta(summary.total_lean, 'kg', 1, 'up') }}
+      </div>
+    </div>
+  </div>
+
+  <div class="card card__pad" style="margin-top:14px">
+    <div class="split">
+      <div>
+        <span class="stat__label">Son durum özeti</span>
+        <p class="small" style="margin:6px 0 0">
+          <b>{{ summary.count }}</b> ölçüm ·
+          <b>{{ summary.span_days }}</b> günde
+          bel <b>{{ summary.total_waist | tr(1) }} cm</b>,
+          yağ kitlesi
+          <b>{{ (L.fat_mass_kg - summary.first.fat_mass_kg) | tr(1) if summary.first.fat_mass_kg else '—' }} kg</b>
+          değişti.
+          {% if summary.total_lean is not none and summary.total_lean > 0
+                and summary.total_fat is not none and summary.total_fat < 0 %}
+            Yağsız kitle artarken yağ kitlesi azalmış — tartıdaki sayı aynı kalsa bile
+            vücut kompozisyonu iyileşiyor.
+          {% endif %}
+        </p>
+      </div>
+      <dl class="kv">
+        <dt>Omuz / bel oranı</dt><dd>{{ L.v_ratio | tr(3) }}</dd>
+        <dt>BMI</dt><dd>{{ L.bmi | tr(1) }}</dd>
+        <dt>Yağ kitlesi</dt><dd>{{ L.fat_mass_kg | tr(1) }} kg</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="section"><h2>Grafikler</h2></div>
+  <div class="grid grid--2">
+    <div class="card">
+      <div class="card__head"><h3>Kilo</h3><span class="hint">kg</span></div>
+      <div class="card__pad">{{ charts_.weight }}</div>
+    </div>
+    <div class="card">
+      <div class="card__head"><h3>Bel çevresi</h3><span class="hint">cm</span></div>
+      <div class="card__pad">{{ charts_.waist }}</div>
+    </div>
+    <div class="card">
+      <div class="card__head"><h3>Vücut kompozisyonu</h3><span class="hint">kg · toplam = kilo</span></div>
+      <div class="card__pad">
+        {{ charts_.comp }}
+        <div class="legend">
+          <span><i style="background:#059669"></i>Yağsız kitle</span>
+          <span><i style="background:#d97706"></i>Yağ kitlesi</span>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card__head"><h3>Yağ oranı</h3><span class="hint">%</span></div>
+      <div class="card__pad">{{ charts_.fat }}</div>
+    </div>
+  </div>
+
+  <div class="section"><h2>Tüm Ölçümler</h2></div>
+  <div class="card">
+    <div class="tablewrap">
+      <table class="tbl">
+        <thead><tr>
+          <th>Tarih</th>
+          <th class="num">Kilo</th><th class="num">Δ</th>
+          <th class="num">Bel</th><th class="num">Δ</th>
+          <th class="num">Boyun</th><th class="num">Omuz</th>
+          <th class="num">Yağ %</th><th class="num">Yağsız</th><th class="num">Yağ kitlesi</th>
+          <th class="num">Omuz/Bel</th><th class="num">BMI</th>
+          <th>Not</th><th></th>
+        </tr></thead>
+        <tbody>
+        {% for m in series %}
+          <tr>
+            <td class="nowrap"><b>{{ m.day | gun }}</b></td>
+            <td class="num"><b>{{ m.weight_kg | tr(2) }}</b></td>
+            <td class="num small">{{ delta(m.d_weight, 'kg', 2, 'neutral') }}</td>
+            <td class="num">{{ m.waist_cm | tr(1) }}</td>
+            <td class="num small">{{ delta(m.d_waist, 'cm', 1, 'down') }}</td>
+            <td class="num muted">{{ m.neck_cm | tr(1) }}</td>
+            <td class="num muted">{{ m.shoulder_cm | tr(1) }}</td>
+            <td class="num">{{ m.body_fat | pct(2) }}</td>
+            <td class="num">{{ m.lean_mass_kg | tr(2) }}</td>
+            <td class="num">{{ m.fat_mass_kg | tr(2) }}</td>
+            <td class="num muted">{{ m.v_ratio | tr(3) }}</td>
+            <td class="num muted">{{ m.bmi | tr(1) }}</td>
+            <td class="small muted" style="max-width:200px">{{ (m.notes or '')[:60] }}</td>
+            <td class="num nowrap">
+              <a class="btn btn--sm btn--ghost" href="{{ url_for('measurement_edit', mid=m.row.id) }}">✎</a>
+              <form method="post" action="{{ url_for('measurement_delete', mid=m.row.id) }}"
+                    style="display:inline" data-confirm="Bu ölçüm silinecek. Emin misiniz?">
+                <button class="btn btn--sm btn--danger" type="submit">🗑</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% else %}
+  <div class="card">
+    <div class="empty">
+      <div class="empty__icon">📏</div>
+      <h3>Henüz ölçüm yok</h3>
+      <p class="muted">Aşağıdaki formdan ilk ölçümünü ekle — yağ oranı, yağsız kitle ve
+         yağ kitlesi otomatik hesaplanır.</p>
+    </div>
+  </div>
+{% endif %}
+
+<div class="section" id="yeni"><h2>Yeni Ölçüm Ekle</h2></div>
+<div class="card card__pad">
+  <form method="post" action="{{ url_for('measurement_new') }}" class="form" autocomplete="off">
+    <div class="form__grid">
+      <div class="field">
+        <label for="date">Tarih <span class="req">*</span></label>
+        <input type="date" id="date" name="date" required value="{{ today }}">
+        <span class="hint">Aynı tarihe ikinci giriş, mevcut kaydı günceller</span>
+      </div>
+      <div class="field">
+        <label for="weight_kg">Kilo (kg)</label>
+        <input type="text" inputmode="decimal" id="weight_kg" name="weight_kg" placeholder="107,5">
+      </div>
+      <div class="field">
+        <label for="waist_cm">Bel (cm)</label>
+        <input type="text" inputmode="decimal" id="waist_cm" name="waist_cm" placeholder="106">
+        <span class="hint">Göbek deliği hizasından</span>
+      </div>
+      <div class="field">
+        <label for="neck_cm">Boyun (cm)</label>
+        <input type="text" inputmode="decimal" id="neck_cm" name="neck_cm"
+               placeholder="41" value="{{ series[0].neck_cm | tr(1) if series else '' }}">
+        <span class="hint">Gırtlağın hemen altından</span>
+      </div>
+      <div class="field">
+        <label for="shoulder_cm">Omuz (cm)</label>
+        <input type="text" inputmode="decimal" id="shoulder_cm" name="shoulder_cm" placeholder="133">
+      </div>
+      <div class="field">
+        <label for="height_cm">Boy (cm)</label>
+        <input type="text" inputmode="decimal" id="height_cm" name="height_cm"
+               placeholder="{{ settings.height_cm }}">
+        <span class="hint">Boş bırakırsan ayarlardaki {{ settings.height_cm }} cm kullanılır</span>
+      </div>
+      {% if settings.sex == 'female' %}
+      <div class="field">
+        <label for="hip_cm">Kalça (cm)</label>
+        <input type="text" inputmode="decimal" id="hip_cm" name="hip_cm">
+        <span class="hint">Yağ oranı formülü için gerekli</span>
+      </div>
+      {% endif %}
+      <div class="field">
+        <label>Hesaplanan yağ oranı</label>
+        <div class="check" style="justify-content:space-between">
+          <span class="mono" id="calcFat">—</span>
+          <span class="mono muted" id="calcLean">—</span>
+        </div>
+      </div>
+      <div class="field field--wide">
+        <label for="notes">Not</label>
+        <input type="text" id="notes" name="notes"
+               placeholder="Aç karnına, sabah · define / bulk dönemi · vs.">
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn btn--primary" type="submit">Ölçümü kaydet</button>
+      <details class="adv" style="margin-left:auto">
+        <summary>Yağ oranını elle girmek istiyorum</summary>
+        <div class="field" style="margin-top:8px;max-width:200px">
+          <label for="body_fat_pct">Yağ oranı (%)</label>
+          <input type="text" inputmode="decimal" id="body_fat_pct" name="body_fat_pct"
+                 placeholder="29,3">
+          <span class="hint">Kaliper / tartı ölçümü — formülü ezer</span>
+        </div>
+      </details>
+    </div>
+  </form>
+</div>
+
+<div class="callout callout--info" style="margin-top:14px">
+  <b>Yağ oranı nasıl hesaplanıyor?</b> US Navy formülü — bel, boyun ve boy çevresinden.
+  Excel'deki «YAĞ ORAN» sütunuyla birebir aynı sonucu verir.
+  Yağsız kitle = kilo × (1 − yağ oranı), yağ kitlesi = kilo × yağ oranı,
+  omuz/bel oranı ise Excel'deki «VÜCUT KOMP.» sütunudur.
+  Ölçümleri her zaman aynı koşulda alın (sabah, aç karnına, tuvalet sonrası) —
+  gün içi dalgalanma 1–2 kg olabilir.
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var w = document.getElementById("weight_kg"),
+      b = document.getElementById("waist_cm"),
+      n = document.getElementById("neck_cm"),
+      h = document.getElementById("height_cm"),
+      fat = document.getElementById("calcFat"),
+      lean = document.getElementById("calcLean"),
+      defaultH = parseFloat("{{ settings.height_cm or 0 }}") || 0;
+
+  function num(el) {
+    if (!el) return 0;
+    var v = parseFloat((el.value || "").replace(",", "."));
+    return isNaN(v) ? 0 : v;
+  }
+  function update() {
+    var waist = num(b), neck = num(n), height = num(h) || defaultH, weight = num(w);
+    if (!waist || !neck || !height || waist <= neck) {
+      fat.textContent = "—"; lean.textContent = "—"; return;
+    }
+    var d = 1.0324 - 0.19077 * Math.log10(waist - neck) + 0.15456 * Math.log10(height);
+    var pct = 495 / d - 450;
+    if (!isFinite(pct) || pct <= 0 || pct >= 80) { fat.textContent = "—"; lean.textContent = "—"; return; }
+    fat.textContent = "%" + pct.toFixed(2).replace(".", ",");
+    lean.textContent = weight
+      ? (weight * (1 - pct / 100)).toFixed(1).replace(".", ",") + " kg yağsız"
+      : "—";
+  }
+  [w, b, n, h].forEach(function (el) { if (el) el.addEventListener("input", update); });
+  update();
+})();
+</script>
+{% endblock %}

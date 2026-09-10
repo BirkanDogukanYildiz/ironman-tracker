@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Ölçüm Düzenle · {{ APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="split" style="margin-bottom:16px">
+  <h1 style="font-size:19px">Ölçümü Düzenle</h1>
+  <a class="btn btn--ghost" href="{{ url_for('body_page') }}">← Ölçümlere dön</a>
+</div>
+
+<div class="card card__pad">
+  <form method="post" class="form" autocomplete="off">
+    <div class="form__grid">
+      <div class="field">
+        <label for="date">Tarih <span class="req">*</span></label>
+        <input type="date" id="date" name="date" required
+               value="{{ (m.date or '')|string|truncate(10, true, '') }}">
+      </div>
+      <div class="field">
+        <label for="weight_kg">Kilo (kg)</label>
+        <input type="text" inputmode="decimal" id="weight_kg" name="weight_kg"
+               value="{{ m.weight_kg if m.weight_kg is not none else '' }}">
+      </div>
+      <div class="field">
+        <label for="waist_cm">Bel (cm)</label>
+        <input type="text" inputmode="decimal" id="waist_cm" name="waist_cm"
+               value="{{ m.waist_cm if m.waist_cm is not none else '' }}">
+      </div>
+      <div class="field">
+        <label for="neck_cm">Boyun (cm)</label>
+        <input type="text" inputmode="decimal" id="neck_cm" name="neck_cm"
+               value="{{ m.neck_cm if m.neck_cm is not none else '' }}">
+      </div>
+      <div class="field">
+        <label for="shoulder_cm">Omuz (cm)</label>
+        <input type="text" inputmode="decimal" id="shoulder_cm" name="shoulder_cm"
+               value="{{ m.shoulder_cm if m.shoulder_cm is not none else '' }}">
+      </div>
+      <div class="field">
+        <label for="hip_cm">Kalça (cm)</label>
+        <input type="text" inputmode="decimal" id="hip_cm" name="hip_cm"
+               value="{{ m.hip_cm if m.hip_cm is not none else '' }}">
+      </div>
+      <div class="field">
+        <label for="height_cm">Boy (cm)</label>
+        <input type="text" inputmode="decimal" id="height_cm" name="height_cm"
+               value="{{ m.height_cm if m.height_cm is not none else '' }}">
+        <span class="hint">Boş = ayarlardaki boy</span>
+      </div>
+      <div class="field">
+        <label for="body_fat_pct">Yağ oranı (%) — elle</label>
+        <input type="text" inputmode="decimal" id="body_fat_pct" name="body_fat_pct"
+               value="{{ m.body_fat_pct if m.body_fat_pct is not none else '' }}">
+        <span class="hint">Boş = bel/boyun/boydan hesaplanır</span>
+      </div>
+      <div class="field field--wide">
+        <label for="notes">Not</label>
+        <input type="text" id="notes" name="notes" value="{{ m.notes or '' }}">
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn btn--primary" type="submit">Değişiklikleri kaydet</button>
+      <a class="btn btn--ghost" href="{{ url_for('body_page') }}">Vazgeç</a>
+    </div>
+  </form>
+</div>
+
+{% if m.id %}
+<form method="post" action="{{ url_for('measurement_delete', mid=m.id) }}" style="margin-top:14px"
+      data-confirm="Bu ölçüm kalıcı olarak silinecek. Emin misiniz?">
+  <button class="btn btn--danger" type="submit">🗑 Bu ölçümü sil</button>
+</form>
+{% endif %}
+{% endblock %}
